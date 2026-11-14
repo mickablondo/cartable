@@ -39,7 +39,7 @@ Les modules imaginés pour le moment sont :
 - chaque fiche générée passe par un statut "à valider" qui sera, du coup, à valider ;
 
 ## Travaux en cours
-
+### v0
 - Branche 1-v0---fondations
 - Création du docker-compose.yml (pour ollama et postgre/pgvector)
 - Validation du docker-compose via :
@@ -52,7 +52,12 @@ docker compose logs ollama
 --spring.docker.compose.enabled=false --spring.datasource.url=jdbc:postgresql://127.0.0.1:5433/cartable --spring.datasource.username=cartable --spring.datasource.password=***** --spring.ai.ollama.base-url=http://localhost:11434
 ```
 - ajout d'une page d'accueil très basique sur http://localhost:8080
+### v1
+#### v1.1
 - ajout d'un modèle de base pour l'IA (bge-m3) via :
 ```shell
 docker compose exec ollama ollama pull bge-m3
 ```
+#### v1.2
+- Import des cours PDF et Word avec conservation du fichier original dans `data/courses/` (ignoré par Git) et du texte extrait en base ;
+- Le chemin du fichier enregistré en base reste relatif à `data/` ; `CARTABLE_DATA_DIRECTORY` permet de changer le dossier de stockage.

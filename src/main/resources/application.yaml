@@ -15,3 +15,6 @@ spring:
       jdbc:
         schema-initialization:
           enabled: false
+cartable:
+  course:
+    data-directory: ${CARTABLE_DATA_DIRECTORY:data}
