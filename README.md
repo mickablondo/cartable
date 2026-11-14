@@ -41,3 +41,8 @@ Les modules imaginés pour le moment sont :
 docker compose up -d
 docker compose logs ollama
 ```
+- ajout des "program arguments" :
+```
+--spring.docker.compose.enabled=false --spring.datasource.url=jdbc:postgresql://127.0.0.1:5433/cartable --spring.datasource.username=cartable --spring.datasource.password=***** --spring.ai.ollama.base-url=http://localhost:11434
+```
+- ajout d'une page d'accueil très basique sur http://localhost:8080
