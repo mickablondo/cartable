@@ -64,3 +64,17 @@ docker compose exec ollama ollama pull bge-m3
 #### v1.3
 - Découpage sur les titres explicites « Chapitre », « Partie », « Thème », « Séquence » et « Dossier » ; sinon, découpage par taille avec recouvrement, en conservant le statut « Sans chapitre détecté » ;
 - Indexation asynchrone des passages dans pgvector avec la matière choisie à l'import et les métadonnées de source ; un échec reste récupérable dans le registre d'événements Modulith.
+#### v1.4
+- Déposer les PDF officiels et leurs descriptions YAML homonymes dans `data/reference/` (champs `title`, `sourceUrl`, `retrievedAt`, `license`, `subject`, `publicationDate`) ;
+- Lancer l'import une seule fois avec `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--cartable.reference.import.enabled=true"` ; `CARTABLE_REFERENCE_DIRECTORY` permet de changer le dossier ;
+- Les matières YAML utilisent les noms de l'enum, par exemple `HISTORY_GEOGRAPHY`. Les dates sont au format `AAAA-MM-JJ`. Les PDF inchangés déjà indexés sont ignorés ; une modification remplace les passages associés à la même URL source.
+
+Exemple de fichier `programme.yaml` associé à `programme.pdf` :
+```yaml
+title: "Programme officiel"
+sourceUrl: "https://www.education.gouv.fr/"
+retrievedAt: "2026-11-14"
+license: "Licence Ouverte 2.0"
+subject: "HISTORY_GEOGRAPHY"
+publicationDate: "2025-09-01"
+```

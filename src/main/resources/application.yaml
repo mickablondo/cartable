@@ -18,3 +18,5 @@ spring:
 cartable:
   course:
     data-directory: ${CARTABLE_DATA_DIRECTORY:data}
+  reference:
+    data-directory: ${CARTABLE_REFERENCE_DIRECTORY:data/reference}
