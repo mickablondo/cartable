@@ -1,3 +1,17 @@
 spring:
   application:
     name: cartable
+  profiles:
+    default: local
+  ai:
+    vectorstore:
+      pgvector:
+        dimensions: 1024
+        distance-type: COSINE_DISTANCE
+        index-type: HNSW
+        initialize-schema: false
+  modulith:
+    events:
+      jdbc:
+        schema-initialization:
+          enabled: false

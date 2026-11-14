@@ -13,6 +13,12 @@ Application modulaire permettant la génération de fiches pour le brevet depuis
 - PostgreSQL avec pgvector ;
 - Docker Compose ;
 
+### Configuration locale
+- Le profil `local` est le profil par défaut ; l’URL d’Ollama se configure avec `OLLAMA_BASE_URL` (par défaut `http://localhost:11434`).
+- Les modèles configurés sont `bge-m3` pour les embeddings et `qwen3:8b` pour la rédaction. Ils peuvent être remplacés avec `CARTABLE_EMBEDDING_MODEL` et `CARTABLE_CHAT_MODEL`.
+- La dimension des embeddings est fixée à 1024 dans la configuration Spring AI et la migration Flyway. Le test vérifie leur cohérence avec la dimension mesurée du modèle.
+- Flyway crée les tables métier, `vector_store` et `event_publication`. L’initialisation automatique des schémas pgvector et Modulith est désactivée.
+
 ### Modules
 Les modules imaginés pour le moment sont :
 - cours : import des fichiers des différents cours, découpage par chapitre et indexation ;
@@ -46,3 +52,7 @@ docker compose logs ollama
 --spring.docker.compose.enabled=false --spring.datasource.url=jdbc:postgresql://127.0.0.1:5433/cartable --spring.datasource.username=cartable --spring.datasource.password=***** --spring.ai.ollama.base-url=http://localhost:11434
 ```
 - ajout d'une page d'accueil très basique sur http://localhost:8080
+- ajout d'un modèle de base pour l'IA (bge-m3) via :
+```shell
+docker compose exec ollama ollama pull bge-m3
+```
