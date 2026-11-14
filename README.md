@@ -61,3 +61,6 @@ docker compose exec ollama ollama pull bge-m3
 #### v1.2
 - Import des cours PDF et Word avec conservation du fichier original dans `data/courses/` (ignoré par Git) et du texte extrait en base ;
 - Le chemin du fichier enregistré en base reste relatif à `data/` ; `CARTABLE_DATA_DIRECTORY` permet de changer le dossier de stockage.
+#### v1.3
+- Découpage sur les titres explicites « Chapitre », « Partie », « Thème », « Séquence » et « Dossier » ; sinon, découpage par taille avec recouvrement, en conservant le statut « Sans chapitre détecté » ;
+- Indexation asynchrone des passages dans pgvector avec la matière choisie à l'import et les métadonnées de source ; un échec reste récupérable dans le registre d'événements Modulith.
