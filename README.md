@@ -31,3 +31,13 @@ Les modules imaginés pour le moment sont :
 ### Règles métier
 - chaque affirmation d'une fiche doit citer sa source ;
 - chaque fiche générée passe par un statut "à valider" qui sera, du coup, à valider ;
+
+## Travaux en cours
+
+- Branche 1-v0---fondations
+- Création du docker-compose.yml (pour ollama et postgre/pgvector)
+- Validation du docker-compose via :
+```shell
+docker compose up -d
+docker compose logs ollama
+```
