@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.cartable;
+package dev.mickablondo.cartable;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.cartable;
+package dev.mickablondo.cartable;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;

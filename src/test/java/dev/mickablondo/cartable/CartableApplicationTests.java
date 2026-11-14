@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.cartable;
+package dev.mickablondo.cartable;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
