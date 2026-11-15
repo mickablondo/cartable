@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import dev.mickablondo.cartable.course.Subject;
+import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
@@ -70,7 +71,14 @@ class SheetController {
 			return "redirect:/sheets/new";
 		}
 
-		Sheet sheet = sheetGenerationService.generate(theme.strip(), subject);
+		Sheet sheet;
+		try {
+			sheet = sheetGenerationService.generate(theme.strip(), subject);
+		}
+		catch (NoCoursePassagesFoundException exception) {
+			redirectAttributes.addFlashAttribute("formError", exception.getMessage());
+			return "redirect:/sheets/new";
+		}
 		return "redirect:/sheets/" + sheet.id();
 	}
 

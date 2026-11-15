@@ -8,7 +8,9 @@ import java.util.stream.Collectors;
 
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.Sheet;
+import dev.mickablondo.cartable.sheet.SheetCourseContent;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
+import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
 import dev.mickablondo.cartable.sheet.SheetQueryService;
 import dev.mickablondo.cartable.sheet.SheetSource;
@@ -46,12 +48,37 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 			.append("\n\n");
 
 		Map<String, SheetSource> sources = indexSources(sheet.sources());
-		appendStatements(markdown, "Notions clés", sheet.keyConcepts(), sources);
-		appendDefinitions(markdown, sheet.definitions(), sources);
-		appendStatements(markdown, "Repères", sheet.landmarks(), sources);
+		appendCourseContent(markdown, sheet.courseContent(), sources);
+		appendGeneralKnowledge(markdown, sheet.generalKnowledge());
 		appendLimitations(markdown, sheet.limitations());
 		appendSources(markdown, sheet.sources());
 		return markdown.toString();
+	}
+
+	private static void appendCourseContent(
+			StringBuilder markdown, SheetCourseContent content, Map<String, SheetSource> sources) {
+		if (content.keyConcepts().isEmpty() && content.definitions().isEmpty() && content.landmarks().isEmpty()) {
+			return;
+		}
+		markdown.append("## Contenu issu du cours et du référentiel — avec sources\n\n");
+		appendStatements(markdown, "### Notions clés", content.keyConcepts(), sources);
+		appendDefinitions(markdown, content.definitions(), sources);
+		appendStatements(markdown, "### Repères", content.landmarks(), sources);
+	}
+
+	private static void appendGeneralKnowledge(StringBuilder markdown, List<SheetGeneralKnowledge> items) {
+		if (items.isEmpty()) {
+			return;
+		}
+		markdown.append("## Complément de connaissances générales — à vérifier\n\n");
+		for (SheetGeneralKnowledge item : items) {
+			if (item.origin() == null) {
+				throw new IllegalStateException("Un élément du complément ne porte pas son origine.");
+			}
+			markdown.append("- **[").append(item.origin()).append("] — À vérifier** ")
+				.append(requiredText(item.text())).append('\n');
+		}
+		markdown.append('\n');
 	}
 
 	private static void appendStatements(
@@ -62,7 +89,7 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 		if (statements.isEmpty()) {
 			return;
 		}
-		markdown.append("## ").append(heading).append("\n\n");
+		markdown.append(heading).append("\n\n");
 		for (SheetStatement statement : statements) {
 			markdown.append("- ").append(requiredText(statement.text()))
 				.append(" ").append(citations(statement.sourceIds(), sources)).append('\n');
@@ -77,7 +104,7 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 		if (definitions.isEmpty()) {
 			return;
 		}
-		markdown.append("## Définitions\n\n");
+		markdown.append("### Définitions\n\n");
 		for (SheetDefinition definition : definitions) {
 			markdown.append("- **").append(requiredText(definition.term())).append("** — ")
 				.append(requiredText(definition.definition())).append(" ")

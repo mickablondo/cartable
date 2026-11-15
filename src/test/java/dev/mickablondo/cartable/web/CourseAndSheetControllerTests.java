@@ -11,9 +11,13 @@ import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
 import dev.mickablondo.cartable.course.CourseQueryService;
 import dev.mickablondo.cartable.course.Subject;
+import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
+import dev.mickablondo.cartable.sheet.SheetCourseContent;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
+import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
+import dev.mickablondo.cartable.sheet.SheetKnowledgeOrigin;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
 import dev.mickablondo.cartable.sheet.SheetQueryService;
 import dev.mickablondo.cartable.sheet.SheetSource;
@@ -39,6 +43,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -127,6 +132,25 @@ class CourseAndSheetControllerTests {
 	}
 
 	@Test
+	void reportsWhenNoCoursePassageIsAvailable() throws Exception {
+		when(sheetGenerationService.generate("Géométrie", Subject.MATHEMATICS))
+			.thenThrow(new NoCoursePassagesFoundException());
+
+		mockMvc.perform(post("/sheets").param("subject", "MATHEMATICS").param("theme", "Géométrie"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/sheets/new"))
+			.andExpect(flash().attribute("formError",
+				"Aucun passage de cours n'a été trouvé pour ce thème et cette matière. "
+					+ "Importez ou indexez d'abord un cours correspondant."));
+
+		mockMvc.perform(get("/sheets/new").flashAttrs(java.util.Map.of(
+				"formError", "Aucun passage de cours n'a été trouvé pour ce thème et cette matière.")))
+			.andExpect(status().isOk())
+			.andExpect(content().string(org.hamcrest.Matchers.containsString(
+				"Aucun passage de cours")));
+	}
+
+	@Test
 	void displaysSheetWithSourcesAndValidationAction() throws Exception {
 		Sheet sheet = sampleSheet();
 		when(sheetQueryService.findById(sheet.id())).thenReturn(Optional.of(sheet));
@@ -136,6 +160,8 @@ class CourseAndSheetControllerTests {
 			.andExpect(view().name("sheet-detail"))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("À vérifier")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Géométrie plane")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("GENERAL_KNOWLEDGE")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Complément de connaissances générales")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("cours-maths.pdf")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Chapitre 2")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("https://example.test/geometry")))
@@ -173,9 +199,12 @@ class CourseAndSheetControllerTests {
 			UUID.fromString("6a7dce15-8fb2-4c64-b9f0-d20c470e32d4"),
 			Subject.MATHEMATICS,
 			"Géométrie plane",
-			List.of(new SheetStatement("Les angles d'un triangle ont une somme de 180°.", List.of("C1"))),
-			List.of(new SheetDefinition("Triangle", "Polygone à trois côtés.", List.of("C1"))),
-			List.of(),
+			new SheetCourseContent(
+				List.of(new SheetStatement("Les angles d'un triangle ont une somme de 180°.", List.of("C1"))),
+				List.of(new SheetDefinition("Triangle", "Polygone à trois côtés.", List.of("C1"))),
+				List.of()),
+			List.of(new SheetGeneralKnowledge(
+				"Un triangle peut aussi être classé selon ses côtés.", SheetKnowledgeOrigin.GENERAL_KNOWLEDGE)),
 			List.of(),
 			List.of(courseSource, referenceSource),
 			SheetStatus.TO_VERIFY,

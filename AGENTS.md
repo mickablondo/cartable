@@ -14,7 +14,8 @@ Lis-le en entier avant toute tâche. Mets-le à jour quand une décision change.
 
 Cartable est une application personnelle (usage familial, sur PC) qui génère des **fiches de révision pour le brevet (3ème)** à partir :
 1. des **cours de l'élève** (PDF, Word, photos et scans),
-2. d'un **référentiel officiel** (programmes du cycle 4, attendus du brevet).
+2. de **connaissances générales** du modèle, en complément et clairement étiquetées ;
+3. optionnellement, d'un **référentiel officiel** (programmes du cycle 4, attendus du brevet), non indispensable au départ.
 
 Le projet sert aussi d'exercice pour pratiquer Java 25, Spring Modulith et Spring AI. La qualité pédagogique et la lisibilité du code priment sur la rapidité de développement.
 
@@ -22,8 +23,8 @@ Public : un collégien de 3ème. Langue de l'interface et des fiches : **frança
 
 ## 2. Principes non négociables
 
-1. **Toute affirmation d'une fiche cite sa source** : soit un extrait du cours de l'élève (matière, chapitre, fichier), soit un document du référentiel (titre, date, URL). Une fiche sans sources n'est pas valide.
-2. **Le modèle ne rédige pas depuis sa mémoire.** Il rédige à partir des passages retrouvés (RAG). Si les passages ne suffisent pas, la fiche l'indique explicitement au lieu de compléter de mémoire.
+1. **Toute affirmation issue du cours ou du référentiel cite sa source** : extrait du cours de l'élève (matière, chapitre, fichier) ou document du référentiel (titre, date, URL). Un élément présenté comme tiré du cours sans source valide est refusé.
+2. **Le cours de l'élève est la base de la fiche ; les connaissances générales du modèle peuvent la compléter, mais jamais en se mélangeant au cours.** La fiche comporte deux parties distinctes : (a) le contenu **issu du cours** (et du référentiel s'il existe), avec sources ; (b) un **complément de connaissances générales**, sans source, clairement étiqueté et destiné à être vérifié. Le modèle ne doit jamais présenter une connaissance générale comme venant du cours, ni modifier ce que dit le cours. Si le cours et le modèle divergent, le cours prime et la divergence est signalée. Le modèle local étant petit, ses connaissances générales sont moins fiables que celles d'un grand modèle : le complément reste toujours à vérifier.
 3. **Statut de validation.** Toute fiche créée est `TO_VERIFY`. Elle ne devient `VERIFIED` que par action explicite de l'élève ou d'un parent.
 4. **Les quiz ne portent que sur des fiches `VERIFIED`.**
 5. **Pas de calculs inventés.** En mathématiques et sciences, ne jamais générer d'exemples numériques non vérifiés. Reprendre fidèlement le cours ; signaler « formules à vérifier » quand l'extraction est incertaine.
@@ -46,8 +47,8 @@ Public : un collégien de 3ème. Langue de l'interface et des fiches : **frança
 | Interface | Thymeleaf (+ HTMX) | « À tester » : peut changer, donc isolée dans un module dédié (section 5) |
 | Modèles locaux | Ollama | Lancé par Docker Compose. L'URL d'Ollama est une propriété de configuration, pour pouvoir basculer vers une installation directe sur le PC si le GPU n'est pas utilisable depuis Docker |
 | Modèles cloud | — | **Reporté et conditionnel.** Pas avant la fin de la V1, et seulement s'il est **100 % gratuit** (voir section 8). Ne pas l'implémenter sans demande explicite |
-| Modèle de génération | À DÉCIDER | À choisir ensemble au début de la V1 (voir section 8) |
-| Modèle d'embedding | À DÉCIDER | À choisir ensemble au début de la V1 ; doit gérer correctement le français |
+| Modèle de génération | `qwen3:8b` (provisoire) | Candidat de départ, à comparer avec `gemma3:12b` sur de vrais cours avant de le figer (voir section 8) |
+| Modèle d'embedding | `bge-m3` | Multilingue (bon en français), **1024 dimensions**, contexte de 8192 tokens, licence MIT |
 | Conteneurs | Docker Compose | Au minimum PostgreSQL + pgvector |
 | Tests | JUnit 5, Testcontainers, tests Modulith | |
 
@@ -115,7 +116,9 @@ Les relations entre modules sont vérifiées par un test (`ApplicationModules.of
 
 - La **matière** (`subject`) est une liste fermée (enum) saisie par l'utilisateur à l'import (principe 7). Valeurs de départ : mathématiques, français, histoire-géographie, sciences physiques, SVT, technologie. Priorité de traitement : mathématiques, français, histoire-géographie d'abord, les trois autres ensuite. D'autres matières pourront être ajoutées plus tard, à la demande de l'utilisateur.
 - Tout passage indexé porte les **métadonnées** : `origin` (`COURSE` ou `OFFICIAL_REFERENCE`), `subject`, `level`, `chapter`, `sourceFile` ou `sourceUrl`, `publicationDate` (référentiel).
-- Un document du référentiel est accompagné d'un petit **fichier de description** (titre, URL, date de récupération, licence) : format YAML (proposé).
+- **Référentiel : l'utilisateur n'écrit jamais de YAML par document.** Les documents officiels sont décrits dans **un seul fichier de configuration versionné** (liste : identifiant stable, titre, matière, lien direct du PDF, page officielle de référence, date de publication, licence, classe et années scolaires concernées). L'application télécharge elle-même ces PDF à la demande (action « Mettre à jour le référentiel »), génère les métadonnées (dont la date de récupération) et indexe sans doublons. Aucun scraping de pages HTML, aucune IA dans cette étape : uniquement des téléchargements d'URL directes listées.
+- Les sites officiels (education.gouv.fr, eduscol) peuvent **bloquer les téléchargements automatiques**. Ne jamais contourner une protection anti-robot ; en cas d'échec, continuer avec les autres documents, afficher un rapport clair (document, URL, raison) et accepter un PDF déposé à la main dans `data/reference/<identifiant>.pdf`.
+- Le référentiel porte une **date de version** et indique la classe et les années scolaires concernées, car les programmes changent par niveau et par année.
 - Sortie du modèle : **sortie structurée** mappée sur un record Java. Ne jamais parser du texte libre à la main.
 - Modèle de fiche **générique** (V1), au minimum : matière, thème, notions clés, définitions, repères, sources, statut.
 - Variantes par matière (chronologie, formules…) : V3 uniquement. Ne pas les anticiper.
@@ -127,7 +130,7 @@ Les relations entre modules sont vérifiées par un test (`ApplicationModules.of
 Ne travaille **que sur le lot en cours**. Ne pas anticiper les lots suivants.
 
 - **V0 — Fondations** : projet Spring Boot, Spring Modulith, `docker-compose.yml` (PostgreSQL + pgvector, et Ollama avec accès au GPU NVIDIA), vérification que le GPU est bien visible depuis le conteneur Ollama, test `verify()` des modules, page « Hello MiK@ ».
-- **V1 — Mode fichiers numériques** : import PDF et Word (Tika), découpage par chapitre, indexation, import du référentiel (histoire-géographie pour commencer), génération d'une **fiche générique** avec sources et statut `TO_VERIFY`, export Markdown, interface minimale avec validation.
+- **V1 — Mode fichiers numériques** : import PDF et Word (Tika), découpage par chapitre, indexation, référentiel officiel **optionnel** (mécanisme prêt, manifeste vide au départ ; à remplir plus tard), génération d'une **fiche générique** avec sources et statut `TO_VERIFY`, export Markdown, interface minimale avec validation.
 - **V2 — Mode scans et images** : lecture des photos et scans par OCR ou modèle multimodal.
 - **V3 — Fiches spécialisées** : chronologie en histoire, formules en maths, règles en grammaire, etc.
 - **V4 — Révision** : quiz tirés des fiches `VERIFIED`.
@@ -139,7 +142,7 @@ Critère de fin d'un lot : fonctionnalités en place, tests verts, `verify()` ve
 - Un seul profil pour l'instant : `local` (Ollama). Un profil `cloud` pourra être ajouté plus tard (comparaison de la qualité des fiches), à ces conditions : il n'est **pas** prévu dans V0 ni V1, il n'est utilisé **que si l'offre est 100 % gratuite**, sans carte bancaire enregistrée ni dépassement payant possible. Si un fournisseur exige un moyen de paiement ou bascule en payant, l'agent s'arrête et demande. Les règles de confidentialité de la section 9 s'appliquent (certaines offres gratuites utilisent les requêtes pour entraîner leurs modèles).
 - Le code métier ne dépend jamais d'un fournisseur : il utilise les abstractions Spring AI (`ChatClient`, `EmbeddingModel`, `VectorStore`).
 - Les **embeddings** restent en local (volume élevé d'appels, pas de données envoyées).
-- Choix des modèles (génération, embedding, vision) : **À DÉCIDER**, ensemble, au début de la V1 (après un premier essai en local). Ne pas écrire de nom de modèle en dur ; il vient de la configuration.
+- Modèles retenus : embedding `bge-m3` (**dimension 1024**, valeur à utiliser dans la propriété, la migration Flyway et le test de cohérence) ; génération `qwen3:8b` à titre **provisoire**, à confirmer après comparaison sur de vrais cours (V1.6) ; vision/OCR : À DÉCIDER (V2). Ces noms viennent **uniquement de la configuration**, jamais écrits en dur dans le code. Vérifier la disponibilité exacte des noms dans la bibliothèque Ollama avant de les télécharger.
 - Les clés d'API vivent dans des **variables d'environnement**, jamais dans le dépôt.
 
 ## 9. Sécurité et confidentialité
@@ -202,7 +205,8 @@ docker compose up -d          # démarre les services (PostgreSQL + pgvector, Ol
 ## 14. Décisions en attente (récapitulatif)
 
 À décider avec l'utilisateur, au moment où le sujet devient nécessaire :
-- [ ] **Modèles** : génération, embedding, vision/OCR (début de la V1 pour les deux premiers, V2 pour le dernier)
+- [ ] **Modèle de génération** : à confirmer après comparaison sur de vrais cours (V1.6)
+- [ ] **Modèle de vision/OCR** : V2
 - [ ] **Profil cloud** : optionnel, après la V1, uniquement si 100 % gratuit
 
 Valeurs proposées par défaut (à signaler à chaque usage, modifiables) :

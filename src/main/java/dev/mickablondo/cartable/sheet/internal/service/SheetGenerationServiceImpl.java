@@ -13,13 +13,18 @@ import dev.mickablondo.cartable.course.CourseSearchService;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.reference.ReferencePassage;
 import dev.mickablondo.cartable.reference.ReferenceSearchService;
+import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
+import dev.mickablondo.cartable.sheet.SheetCourseContent;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
+import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
 import dev.mickablondo.cartable.sheet.SheetGenerated;
+import dev.mickablondo.cartable.sheet.SheetKnowledgeOrigin;
 import dev.mickablondo.cartable.sheet.SheetSource;
 import dev.mickablondo.cartable.sheet.SheetStatement;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
+import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -66,6 +71,9 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		}
 
 		List<CoursePassage> coursePassages = courseSearchService.search(theme, subject);
+		if (coursePassages.isEmpty()) {
+			throw new NoCoursePassagesFoundException();
+		}
 		List<ReferencePassage> referencePassages = referenceSearchService.search(theme, subject);
 		Map<String, SheetSource> sourceCatalog = new LinkedHashMap<>();
 		List<String> context = new ArrayList<>();
@@ -83,15 +91,17 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 			throw new IllegalStateException("Le modèle n'a retourné aucun contenu structuré pour la fiche.");
 		}
 
-		List<SheetSource> citedSources = validateAndResolveSources(draft, sourceCatalog);
+		SheetCourseContent courseContent = requiredValue(
+			draft.courseContent(), "Le contenu issu des sources est absent.");
+		List<SheetSource> citedSources = validateAndResolveSources(courseContent, sourceCatalog);
+		List<SheetGeneralKnowledge> generalKnowledge = validateGeneralKnowledge(draft.generalKnowledge());
 		Instant generatedAt = Instant.now();
 		Sheet sheet = new Sheet(
 			UUID.randomUUID(),
 			subject,
 			requiredText(draft.theme(), "Le thème généré est vide."),
-			requiredList(draft.keyConcepts(), "Les notions clés sont absentes."),
-			requiredList(draft.definitions(), "Les définitions sont absentes."),
-			requiredList(draft.landmarks(), "Les repères sont absents."),
+			courseContent,
+			generalKnowledge,
 			requiredList(draft.limitations(), "Les limites sont absentes."),
 			citedSources,
 			generatedAt);
@@ -151,15 +161,30 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 	}
 
 	private static List<SheetSource> validateAndResolveSources(
-			SheetDraft draft, Map<String, SheetSource> sourceCatalog) {
+			SheetCourseContent courseContent, Map<String, SheetSource> sourceCatalog) {
 		Map<String, SheetSource> citedSources = new LinkedHashMap<>();
-		addCitations(draft.keyConcepts(), sourceCatalog, citedSources);
-		addDefinitionCitations(draft.definitions(), sourceCatalog, citedSources);
-		addCitations(draft.landmarks(), sourceCatalog, citedSources);
+		addCitations(courseContent.keyConcepts(), sourceCatalog, citedSources);
+		addDefinitionCitations(courseContent.definitions(), sourceCatalog, citedSources);
+		addCitations(courseContent.landmarks(), sourceCatalog, citedSources);
 		if (citedSources.isEmpty()) {
 			throw new IllegalStateException("La fiche est refusée : elle ne cite aucune source.");
 		}
 		return List.copyOf(citedSources.values());
+	}
+
+	private static List<SheetGeneralKnowledge> validateGeneralKnowledge(
+			List<SheetGeneralKnowledgeDraft> generalKnowledge) {
+		List<SheetGeneralKnowledge> validated = new ArrayList<>();
+		for (SheetGeneralKnowledgeDraft item : requiredList(
+				generalKnowledge, "Le complément de connaissances générales est absent.")) {
+			requiredText(item.text(), "Un élément du complément de connaissances générales est vide.");
+			if (item.sourceIds() != null && !item.sourceIds().isEmpty()) {
+				throw new IllegalStateException(
+					"Le complément de connaissances générales ne peut pas citer de source.");
+			}
+			validated.add(new SheetGeneralKnowledge(item.text().strip(), SheetKnowledgeOrigin.GENERAL_KNOWLEDGE));
+		}
+		return List.copyOf(validated);
 	}
 
 	private static void addCitations(
@@ -204,15 +229,17 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		try {
 			int updatedRows = jdbcTemplate.update("""
 				INSERT INTO sheet
-					(id, subject, theme, key_concepts, definitions, landmarks, limitations, sources, status, generated_at)
-				VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)
+					(id, subject, theme, key_concepts, definitions, landmarks, general_knowledge, limitations,
+					 sources, status, generated_at)
+				VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)
 				""",
 				sheet.id(),
 				sheet.subject().name(),
 				sheet.theme(),
-				jsonMapper.writeValueAsString(sheet.keyConcepts()),
-				jsonMapper.writeValueAsString(sheet.definitions()),
-				jsonMapper.writeValueAsString(sheet.landmarks()),
+				jsonMapper.writeValueAsString(sheet.courseContent().keyConcepts()),
+				jsonMapper.writeValueAsString(sheet.courseContent().definitions()),
+				jsonMapper.writeValueAsString(sheet.courseContent().landmarks()),
+				jsonMapper.writeValueAsString(sheet.generalKnowledge()),
 				jsonMapper.writeValueAsString(sheet.limitations()),
 				jsonMapper.writeValueAsString(sheet.sources()),
 				sheet.status().name(),
@@ -242,6 +269,13 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 			throw new IllegalStateException(message);
 		}
 		return value.strip();
+	}
+
+	private static <T> T requiredValue(T value, String message) {
+		if (value == null) {
+			throw new IllegalStateException(message);
+		}
+		return value;
 	}
 
 	private static <T> List<T> requiredList(List<T> values, String message) {

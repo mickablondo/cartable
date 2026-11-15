@@ -8,7 +8,9 @@ import java.util.UUID;
 
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.Sheet;
+import dev.mickablondo.cartable.sheet.SheetCourseContent;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
+import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
 import dev.mickablondo.cartable.sheet.SheetQueryService;
 import dev.mickablondo.cartable.sheet.SheetSource;
 import dev.mickablondo.cartable.sheet.SheetStatement;
@@ -30,6 +32,8 @@ class SheetQueryServiceImpl implements SheetQueryService {
 	};
 	private static final TypeReference<List<SheetSource>> SOURCES_TYPE = new TypeReference<>() {
 	};
+	private static final TypeReference<List<SheetGeneralKnowledge>> GENERAL_KNOWLEDGE_TYPE = new TypeReference<>() {
+	};
 
 	private final JdbcTemplate jdbcTemplate;
 	private final JsonMapper jsonMapper;
@@ -46,7 +50,8 @@ class SheetQueryServiceImpl implements SheetQueryService {
 		}
 
 		List<Sheet> sheets = jdbcTemplate.query("""
-			SELECT id, subject, theme, key_concepts, definitions, landmarks, limitations, sources, status, generated_at
+			SELECT id, subject, theme, key_concepts, definitions, landmarks, general_knowledge, limitations,
+			       sources, status, generated_at
 			FROM sheet
 			WHERE id = ?
 			""",
@@ -61,9 +66,11 @@ class SheetQueryServiceImpl implements SheetQueryService {
 				resultSet.getObject("id", UUID.class),
 				Subject.valueOf(resultSet.getString("subject")),
 				resultSet.getString("theme"),
-				jsonMapper.readValue(resultSet.getString("key_concepts"), STATEMENTS_TYPE),
-				jsonMapper.readValue(resultSet.getString("definitions"), DEFINITIONS_TYPE),
-				jsonMapper.readValue(resultSet.getString("landmarks"), STATEMENTS_TYPE),
+				new SheetCourseContent(
+					jsonMapper.readValue(resultSet.getString("key_concepts"), STATEMENTS_TYPE),
+					jsonMapper.readValue(resultSet.getString("definitions"), DEFINITIONS_TYPE),
+					jsonMapper.readValue(resultSet.getString("landmarks"), STATEMENTS_TYPE)),
+				jsonMapper.readValue(resultSet.getString("general_knowledge"), GENERAL_KNOWLEDGE_TYPE),
 				jsonMapper.readValue(resultSet.getString("limitations"), STRINGS_TYPE),
 				jsonMapper.readValue(resultSet.getString("sources"), SOURCES_TYPE),
 				SheetStatus.valueOf(resultSet.getString("status")),

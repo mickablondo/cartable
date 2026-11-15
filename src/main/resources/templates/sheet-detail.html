@@ -14,33 +14,46 @@
         Cette fiche n’a pas encore été vérifiée. Vérifiez son contenu avant de l’utiliser.
     </p>
 
-    <section th:if="${!#lists.isEmpty(sheet.keyConcepts)}">
-        <h2>Notions clés</h2>
-        <ul>
-            <li th:each="concept : ${sheet.keyConcepts}">
+    <section th:if="${!#lists.isEmpty(sheet.courseContent.keyConcepts) or !#lists.isEmpty(sheet.courseContent.definitions) or !#lists.isEmpty(sheet.courseContent.landmarks)}">
+        <h2>Contenu issu du cours et du référentiel — avec sources</h2>
+        <div th:if="${!#lists.isEmpty(sheet.courseContent.keyConcepts)}">
+            <h3>Notions clés</h3>
+            <ul>
+            <li th:each="concept : ${sheet.courseContent.keyConcepts}">
                 <span th:text="${concept.text}"></span>
                 <span th:each="sourceId : ${concept.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
             </li>
-        </ul>
-    </section>
+            </ul>
+        </div>
 
-    <section th:if="${!#lists.isEmpty(sheet.definitions)}">
-        <h2>Définitions</h2>
-        <ul>
-            <li th:each="definition : ${sheet.definitions}">
+        <div th:if="${!#lists.isEmpty(sheet.courseContent.definitions)}">
+            <h3>Définitions</h3>
+            <ul>
+            <li th:each="definition : ${sheet.courseContent.definitions}">
                 <strong th:text="${definition.term}"></strong> —
                 <span th:text="${definition.definition}"></span>
                 <span th:each="sourceId : ${definition.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
             </li>
-        </ul>
-    </section>
+            </ul>
+        </div>
 
-    <section th:if="${!#lists.isEmpty(sheet.landmarks)}">
-        <h2>Repères</h2>
-        <ul>
-            <li th:each="landmark : ${sheet.landmarks}">
+        <div th:if="${!#lists.isEmpty(sheet.courseContent.landmarks)}">
+            <h3>Repères</h3>
+            <ul>
+            <li th:each="landmark : ${sheet.courseContent.landmarks}">
                 <span th:text="${landmark.text}"></span>
                 <span th:each="sourceId : ${landmark.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+    </section>
+
+    <section th:if="${!#lists.isEmpty(sheet.generalKnowledge)}">
+        <h2>Complément de connaissances générales — à vérifier</h2>
+        <ul>
+            <li th:each="item : ${sheet.generalKnowledge}">
+                <strong th:text="${'[' + item.origin + '] — À vérifier'}"></strong>
+                <span th:text="${item.text}"></span>
             </li>
         </ul>
     </section>

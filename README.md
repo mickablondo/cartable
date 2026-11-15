@@ -77,8 +77,9 @@ docker compose exec ollama ollama pull bge-m3
 - Chaque résultat conserve sa référence : fichier et chapitre pour un cours ; titre, URL, fichier, chapitre et date de publication pour le référentiel.
 - Les recherches depuis `sheet` doivent passer par ces API publiques, sans accès direct au VectorStore ni aux tables des autres modules.
 #### v1.6
-- Le module `sheet` génère une fiche générique structurée à partir des passages trouvés pour le thème et la matière demandés ; chaque notion, définition et repère conserve ses identifiants de source.
-- Le prompt de génération est dans `src/main/resources/prompts/sheet-generation.st`. Les fiches sont enregistrées par Flyway au statut `TO_VERIFY`, puis l'événement `SheetGenerated` est publié.
+- Le module `sheet` génère une fiche hybride : le contenu issu des cours et du référentiel garde ses identifiants de source, tandis que le complément de connaissances générales est séparé, étiqueté `GENERAL_KNOWLEDGE` et à vérifier.
+- Un élément sourcé sans identifiant de source valide ou un élément du complément qui cite une source est refusé. Sans passage de cours trouvé pour le thème, la génération s'arrête avec un message explicite.
+- Le prompt de génération est dans `src/main/resources/prompts/sheet-generation.st`. En mathématiques et sciences, il interdit les exemples numériques inventés et demande que les formules du complément soient marquées « à vérifier ». Les fiches sont enregistrées par Flyway au statut `TO_VERIFY`, puis l'événement `SheetGenerated` est publié.
 - Les tests de génération utilisent un faux `ChatClient` avec des réponses fixes ; aucun modèle réel n'est appelé automatiquement.
 
 #### v1.7
@@ -88,5 +89,3 @@ docker compose exec ollama ollama pull bge-m3
 - La page d'accueil permet d'importer un fichier PDF ou Word avec choix obligatoire de la matière et affiche les cours importés ainsi que leur état d'indexation.
 - Le formulaire de création et la page de fiche permettent de demander une fiche, consulter son contenu, ses sources et son statut, la valider, et l'exporter en Markdown.
 - Les contrôleurs du module `web` ne communiquent avec les modules métier que par leurs API publiques ; l'interface utilise Thymeleaf sans HTMX.
-
-RAF v1 : corriger v1.4 par v1.4b

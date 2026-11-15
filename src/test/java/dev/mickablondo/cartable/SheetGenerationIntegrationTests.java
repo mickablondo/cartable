@@ -4,17 +4,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+import java.nio.charset.StandardCharsets;
 
 import dev.mickablondo.cartable.course.Subject;
+import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
+import dev.mickablondo.cartable.sheet.SheetCourseContent;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetGenerated;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
+import dev.mickablondo.cartable.sheet.SheetKnowledgeOrigin;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
 import dev.mickablondo.cartable.sheet.SheetStatement;
 import dev.mickablondo.cartable.sheet.SheetVerificationService;
 import dev.mickablondo.cartable.sheet.SheetVerified;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
+import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -25,6 +30,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -38,12 +44,15 @@ import org.springframework.test.context.event.RecordApplicationEvents;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Import({ TestcontainersConfiguration.class, SheetGenerationIntegrationTests.FakeGenerationConfiguration.class })
@@ -72,10 +81,14 @@ class SheetGenerationIntegrationTests {
 	@Autowired
 	private ApplicationEvents applicationEvents;
 
+	@Value("classpath:prompts/sheet-generation.st")
+	private Resource generationPrompt;
+
 	@BeforeEach
 	void setUp() {
 		jdbcTemplate.update("DELETE FROM sheet");
 		jdbcTemplate.update("DELETE FROM vector_store");
+		clearInvocations(chatClient);
 		vectorStore.add(List.of(
 			Document.builder()
 				.text("Les objets techniques répondent à un besoin.")
@@ -103,9 +116,11 @@ class SheetGenerationIntegrationTests {
 	void generatesAndStoresSheetWithCitationsAndPublishesEvent() {
 		fixChatClientResponse(new SheetDraft(
 			"Objets techniques",
-			List.of(new SheetStatement("Ils répondent à un besoin.", List.of("C1"))),
-			List.of(new SheetDefinition("Objet technique", "Objet conçu pour répondre à un besoin.", List.of("R1"))),
-			List.of(),
+			new SheetCourseContent(
+				List.of(new SheetStatement("Ils répondent à un besoin.", List.of("C1"))),
+				List.of(new SheetDefinition("Objet technique", "Objet conçu pour répondre à un besoin.", List.of("R1"))),
+				List.of()),
+			List.of(new SheetGeneralKnowledgeDraft("Un objet peut aussi être évalué selon son impact.", List.of())),
 			List.of()));
 
 		Sheet sheet = sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY);
@@ -114,6 +129,7 @@ class SheetGenerationIntegrationTests {
 		assertEquals("Objets techniques", sheet.theme());
 		assertEquals("TO_VERIFY", sheet.status().name());
 		assertEquals(2, sheet.sources().size());
+		assertEquals(SheetKnowledgeOrigin.GENERAL_KNOWLEDGE, sheet.generalKnowledge().getFirst().origin());
 		assertEquals("technologie.docx", sheet.sources().getFirst().sourceFile());
 		assertEquals("https://example.test/technology", sheet.sources().get(1).sourceUrl());
 		assertEquals(1, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet WHERE id = ?", Integer.class, sheet.id()));
@@ -121,6 +137,8 @@ class SheetGenerationIntegrationTests {
 		Map<String, Object> stored = jdbcTemplate.queryForMap("""
 			SELECT subject, status, key_concepts -> 0 -> 'sourceIds' ->> 0 AS concept_source,
 			       definitions -> 0 -> 'sourceIds' ->> 0 AS definition_source,
+			       general_knowledge -> 0 ->> 'origin' AS general_origin,
+			       general_knowledge -> 0 -> 'sourceIds' AS general_sources,
 			       jsonb_array_length(sources) AS source_count
 			FROM sheet
 			WHERE id = ?
@@ -129,6 +147,8 @@ class SheetGenerationIntegrationTests {
 		assertEquals("TO_VERIFY", stored.get("status"));
 		assertEquals("C1", stored.get("concept_source"));
 		assertEquals("R1", stored.get("definition_source"));
+		assertEquals("GENERAL_KNOWLEDGE", stored.get("general_origin"));
+		assertNull(stored.get("general_sources"));
 		assertEquals(2, stored.get("source_count"));
 		assertEquals(1, applicationEvents.stream(SheetGenerated.class)
 			.filter(event -> event.sheetId().equals(sheet.id()))
@@ -139,8 +159,10 @@ class SheetGenerationIntegrationTests {
 	void refusesSheetWithoutCitedSources() {
 		fixChatClientResponse(new SheetDraft(
 			"Objets techniques",
-			List.of(new SheetStatement("Ils répondent à un besoin.", List.of())),
-			List.of(),
+			new SheetCourseContent(
+				List.of(new SheetStatement("Ils répondent à un besoin.", List.of())),
+				List.of(),
+				List.of()),
 			List.of(),
 			List.of("Le référentiel ne précise pas davantage ce thème.")));
 
@@ -149,6 +171,59 @@ class SheetGenerationIntegrationTests {
 
 		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
 		assertEquals(0, applicationEvents.stream(SheetGenerated.class).count());
+	}
+
+	@Test
+	void refusesCourseContentWithUnknownSourceId() {
+		fixChatClientResponse(new SheetDraft(
+			"Objets techniques",
+			new SheetCourseContent(
+				List.of(new SheetStatement("Un fait non étayé.", List.of("C99"))),
+				List.of(),
+				List.of()),
+			List.of(),
+			List.of()));
+
+		assertThrows(IllegalStateException.class,
+			() -> sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY));
+		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
+	}
+
+	@Test
+	void refusesGeneralKnowledgeThatCitesASource() {
+		fixChatClientResponse(new SheetDraft(
+			"Objets techniques",
+			new SheetCourseContent(
+				List.of(new SheetStatement("Ils répondent à un besoin.", List.of("C1"))),
+				List.of(),
+				List.of()),
+			List.of(new SheetGeneralKnowledgeDraft("Un complément.", List.of("C1"))),
+			List.of()));
+
+		assertThrows(IllegalStateException.class,
+			() -> sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY));
+		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
+	}
+
+	@Test
+	void refusesGenerationWhenNoCoursePassageIsFoundEvenIfReferenceExists() {
+		jdbcTemplate.update("DELETE FROM vector_store");
+		vectorStore.add(List.of(Document.builder()
+			.text("Le programme étudie les objets techniques.")
+			.metadata(Map.of(
+				"origin", "OFFICIAL_REFERENCE",
+				"subject", Subject.TECHNOLOGY.name(),
+				"title", "Programme de technologie",
+				"sourceUrl", "https://example.test/technology",
+				"sourceFile", "programme.pdf",
+				"chapter", "Objets techniques",
+				"publicationDate", "2025-09-01"))
+			.build()));
+
+		assertThrows(NoCoursePassagesFoundException.class,
+			() -> sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY));
+		verify(chatClient, org.mockito.Mockito.never()).prompt();
+		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
 	}
 
 	@Test
@@ -181,7 +256,7 @@ class SheetGenerationIntegrationTests {
 		assertTrue(unverifiedMarkdown.contains("Ils répondent à un besoin. [C1]"));
 		assertTrue(unverifiedMarkdown.contains("Objet technique"));
 		assertTrue(unverifiedMarkdown.contains("Programme de technologie"));
-		assertTrue(unverifiedMarkdown.contains("## Repères"));
+		assertTrue(unverifiedMarkdown.contains("### Repères"));
 		assertTrue(unverifiedMarkdown.contains("Un besoin est à l'origine de l'objet. [R1]"));
 		assertTrue(unverifiedMarkdown.contains("## Points à compléter"));
 		assertTrue(unverifiedMarkdown.contains("Le cours ne précise pas davantage ce thème."));
@@ -189,12 +264,30 @@ class SheetGenerationIntegrationTests {
 		assertTrue(unverifiedMarkdown.contains("Chapitre 1 - Objets techniques"));
 		assertTrue(unverifiedMarkdown.contains("https://example.test/technology"));
 		assertTrue(unverifiedMarkdown.contains("2025-09-01"));
+		assertTrue(unverifiedMarkdown.contains("Complément de connaissances générales — à vérifier"));
+		assertTrue(unverifiedMarkdown.contains("[GENERAL_KNOWLEDGE] — À vérifier"));
+		assertTrue(unverifiedMarkdown.contains("Le rapport v = d / t — à vérifier."));
+		assertFalse(unverifiedMarkdown.contains("Le rapport v = d / t — à vérifier. ["));
 
 		sheetVerificationService.verify(sheet.id());
 		String verifiedMarkdown = sheetMarkdownExportService.exportMarkdown(sheet.id());
 
 		assertFalse(verifiedMarkdown.contains("n'a pas encore été vérifiée"));
 		assertTrue(verifiedMarkdown.contains("**Statut :** Vérifiée"));
+	}
+
+	@Test
+	void promptSeparatesGeneralKnowledgeAndSetsScienceRestrictions() throws Exception {
+		fixChatClientResponse(validDraft());
+		sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY);
+
+		String prompt = new String(generationPrompt.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+		assertTrue(prompt.contains("courseContent"));
+		assertTrue(prompt.contains("generalKnowledge"));
+		assertTrue(prompt.contains("GENERAL_KNOWLEDGE"));
+		assertTrue(prompt.contains("ne présente jamais une connaissance générale comme venant du cours"));
+		assertTrue(prompt.contains("n'invente aucun exemple numérique"));
+		assertTrue(prompt.contains("Toute formule placée dans `generalKnowledge` doit être explicitement suivie de « à vérifier »"));
 	}
 
 	@Test
@@ -209,9 +302,11 @@ class SheetGenerationIntegrationTests {
 	private static SheetDraft validDraft() {
 		return new SheetDraft(
 			"Objets techniques",
-			List.of(new SheetStatement("Ils répondent à un besoin.", List.of("C1"))),
-			List.of(new SheetDefinition("Objet technique", "Objet conçu pour répondre à un besoin.", List.of("R1"))),
-			List.of(new SheetStatement("Un besoin est à l'origine de l'objet.", List.of("R1"))),
+			new SheetCourseContent(
+				List.of(new SheetStatement("Ils répondent à un besoin.", List.of("C1"))),
+				List.of(new SheetDefinition("Objet technique", "Objet conçu pour répondre à un besoin.", List.of("R1"))),
+				List.of(new SheetStatement("Un besoin est à l'origine de l'objet.", List.of("R1")))),
+			List.of(new SheetGeneralKnowledgeDraft("Le rapport v = d / t — à vérifier.", List.of())),
 			List.of("Le cours ne précise pas davantage ce thème."));
 	}
 
