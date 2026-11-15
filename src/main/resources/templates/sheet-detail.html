@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title th:text="${sheet.theme} + ' — Cartable'">Fiche — Cartable</title>
+</head>
+<body>
+<main>
+    <p><a href="/">Retour à l’accueil</a></p>
+    <h1 th:text="${sheet.theme}"></h1>
+    <p><strong>Matière :</strong> <span th:text="${subjectLabel}"></span></p>
+    <p><strong>Statut :</strong> <span th:text="${needsVerification ? 'À vérifier' : 'Vérifiée'}"></span></p>
+    <p th:if="${needsVerification}" role="alert">
+        Cette fiche n’a pas encore été vérifiée. Vérifiez son contenu avant de l’utiliser.
+    </p>
+
+    <section th:if="${!#lists.isEmpty(sheet.courseContent.keyConcepts) or !#lists.isEmpty(sheet.courseContent.definitions) or !#lists.isEmpty(sheet.courseContent.landmarks)}">
+        <h2>Contenu issu du cours et du référentiel — avec sources</h2>
+        <div th:if="${!#lists.isEmpty(sheet.courseContent.keyConcepts)}">
+            <h3>Notions clés</h3>
+            <ul>
+            <li th:each="concept : ${sheet.courseContent.keyConcepts}">
+                <span th:text="${concept.text}"></span>
+                <span th:each="sourceId : ${concept.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(sheet.courseContent.definitions)}">
+            <h3>Définitions</h3>
+            <ul>
+            <li th:each="definition : ${sheet.courseContent.definitions}">
+                <strong th:text="${definition.term}"></strong> —
+                <span th:text="${definition.definition}"></span>
+                <span th:each="sourceId : ${definition.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(sheet.courseContent.landmarks)}">
+            <h3>Repères</h3>
+            <ul>
+            <li th:each="landmark : ${sheet.courseContent.landmarks}">
+                <span th:text="${landmark.text}"></span>
+                <span th:each="sourceId : ${landmark.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+    </section>
+
+    <section th:if="${!#lists.isEmpty(sheet.generalKnowledge)}">
+        <h2>Complément de connaissances générales — à vérifier</h2>
+        <ul>
+            <li th:each="item : ${sheet.generalKnowledge}">
+                <strong th:text="${'[' + item.origin + '] — À vérifier'}"></strong>
+                <span th:text="${item.text}"></span>
+            </li>
+        </ul>
+    </section>
+
+    <section th:if="${!#lists.isEmpty(sheet.limitations)}">
+        <h2>Points à compléter</h2>
+        <ul>
+            <li th:each="limitation : ${sheet.limitations}" th:text="${limitation}"></li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Sources</h2>
+        <ul>
+            <li th:each="source : ${sheet.sources}">
+                <strong th:text="${'[' + source.id + ']'}"></strong>
+                <span th:if="${source.origin == 'COURSE'}">
+                    Cours — fichier <span th:text="${source.sourceFile}"></span>,
+                    chapitre <span th:text="${source.chapter}"></span>.
+                </span>
+                <span th:if="${source.origin == 'OFFICIAL_REFERENCE'}">
+                    Référentiel officiel — <span th:text="${source.title}"></span>,
+                    fichier <span th:text="${source.sourceFile}"></span>,
+                    chapitre <span th:text="${source.chapter}"></span>,
+                    publié le <span th:text="${source.publicationDate}"></span>.
+                    <a th:href="${source.sourceUrl}" th:text="${source.sourceUrl}"></a>
+                </span>
+            </li>
+        </ul>
+    </section>
+
+    <form th:if="${needsVerification}" method="post" th:action="@{/sheets/{id}/verify(id=${sheet.id})}">
+        <button type="submit">Valider</button>
+    </form>
+    <form method="get" th:action="@{/sheets/{id}/export(id=${sheet.id})}">
+        <button type="submit">Exporter en Markdown</button>
+    </form>
+</main>
+</body>
+</html>

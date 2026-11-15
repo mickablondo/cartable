@@ -1,0 +1,8 @@
+spring:
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        model: ${CARTABLE_CHAT_MODEL:qwen3:8b}
+      embedding:
+        model: ${CARTABLE_EMBEDDING_MODEL:bge-m3}

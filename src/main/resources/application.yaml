@@ -1,3 +1,28 @@
 spring:
+  config:
+    import: classpath:reference-documents.yaml
   application:
     name: cartable
+  profiles:
+    default: local
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 26MB
+  ai:
+    vectorstore:
+      pgvector:
+        dimensions: 1024
+        distance-type: COSINE_DISTANCE
+        index-type: HNSW
+        initialize-schema: false
+  modulith:
+    events:
+      jdbc:
+        schema-initialization:
+          enabled: false
+cartable:
+  course:
+    data-directory: ${CARTABLE_DATA_DIRECTORY:data}
+  reference:
+    data-directory: ${CARTABLE_REFERENCE_DIRECTORY:data/reference}
