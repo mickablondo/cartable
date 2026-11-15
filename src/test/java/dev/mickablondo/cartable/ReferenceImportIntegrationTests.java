@@ -4,16 +4,20 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.reference.ReferenceImportException;
 import dev.mickablondo.cartable.reference.ReferenceImportResult;
 import dev.mickablondo.cartable.reference.ReferenceImportService;
 import dev.mickablondo.cartable.reference.ReferenceIndexed;
+import dev.mickablondo.cartable.reference.ReferencePassage;
+import dev.mickablondo.cartable.reference.ReferenceSearchService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +26,7 @@ import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -49,6 +54,12 @@ class ReferenceImportIntegrationTests {
 
 	@Autowired
 	private ReferenceImportService referenceImportService;
+
+	@Autowired
+	private ReferenceSearchService referenceSearchService;
+
+	@Autowired
+	private VectorStore vectorStore;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -193,6 +204,49 @@ class ReferenceImportIntegrationTests {
 	}
 
 	@Test
+	void searchesOfficialPassagesBySubjectAndOriginWithTheirSource() throws IOException {
+		String sourceUrl = "https://example.test/technology-search";
+		writeReference(
+			"technology-search",
+			"Chapitre 1 - Objets techniques\nLes objets techniques repondent a un besoin.",
+			sourceUrl,
+			"Référentiel de technologie",
+			"TECHNOLOGY");
+		referenceImportService.importReferences();
+		vectorStore.add(List.of(
+			Document.builder()
+				.text("Cours artificiel de technologie.")
+				.metadata(Map.of(
+					"origin", "COURSE",
+					"subject", Subject.TECHNOLOGY.name(),
+					"sourceFile", "technology-course.docx",
+					"chapter", "Chapitre du cours"))
+				.build(),
+			Document.builder()
+				.text("Référence officielle d'une autre matière.")
+				.metadata(Map.of(
+					"origin", "OFFICIAL_REFERENCE",
+					"subject", Subject.FRENCH.name(),
+					"title", "Référence de français",
+					"sourceUrl", "https://example.test/french",
+					"sourceFile", "french-reference.pdf",
+					"chapter", "Chapitre de français",
+					"publicationDate", "2025-09-01"))
+				.build()));
+
+		List<ReferencePassage> passages = referenceSearchService.search("objets techniques", Subject.TECHNOLOGY);
+
+		assertEquals(1, passages.size());
+		ReferencePassage passage = passages.getFirst();
+		assertEquals("Les objets techniques repondent a un besoin.", passage.text());
+		assertEquals("Référentiel de technologie", passage.title());
+		assertEquals(sourceUrl, passage.sourceUrl());
+		assertEquals("technology-search.pdf", passage.sourceFile());
+		assertEquals("Chapitre 1 - Objets techniques", passage.chapter());
+		assertEquals(LocalDate.parse("2025-09-01"), passage.publicationDate());
+	}
+
+	@Test
 	void rejectsPdfWithoutMatchingYamlDescriptor() throws IOException {
 		Files.write(REFERENCE_DIRECTORY.resolve("orphan.pdf"), pdfDocument("Reference sans métadonnées."));
 
@@ -216,7 +270,12 @@ class ReferenceImportIntegrationTests {
 	}
 
 	private static byte[] pdfDocument(String text) {
-		String content = "BT /F1 12 Tf 72 720 Td (" + text + ") Tj ET";
+		String content = "BT /F1 12 Tf 72 720 Td "
+			+ text.lines()
+				.map(line -> "(" + line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+					+ ") Tj 0 -14 Td ")
+				.reduce("", String::concat)
+			+ "ET";
 		String stream = content + "\n";
 		String[] objects = {
 			"<< /Type /Catalog /Pages 2 0 R >>",

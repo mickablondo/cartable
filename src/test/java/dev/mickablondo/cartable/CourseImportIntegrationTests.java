@@ -9,6 +9,7 @@ import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -48,6 +49,12 @@ class CourseImportIntegrationTests {
 
 	@Autowired
 	private CourseImportService courseImportService;
+
+	@Autowired
+	private CourseSearchService courseSearchService;
+
+	@Autowired
+	private VectorStore vectorStore;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -135,6 +142,44 @@ class CourseImportIntegrationTests {
 			assertEquals("3ème", passage.get("level"));
 			assertEquals(docx.getFileName().toString(), passage.get("source_file"));
 		}
+	}
+
+	@Test
+	void searchesCoursePassagesBySubjectAndOriginWithTheirSource(@TempDir Path inputDirectory) throws Exception {
+		Path docx = inputDirectory.resolve("technology-course.docx");
+		Files.write(docx, wordDocument("""
+			Chapitre 1 - Les objets techniques
+			Les objets techniques répondent à un besoin.
+			"""));
+
+		CourseImportResult result = courseImportService.importCourse(docx, Subject.TECHNOLOGY);
+		awaitCourseIndexed(result.id());
+		vectorStore.add(List.of(
+			Document.builder()
+				.text("Référence officielle factice.")
+				.metadata(Map.of(
+					"origin", "OFFICIAL_REFERENCE",
+					"subject", Subject.TECHNOLOGY.name(),
+					"sourceUrl", "https://example.test/technology",
+					"sourceFile", "technology-reference.pdf",
+					"chapter", "Chapitre officiel",
+					"publicationDate", "2025-09-01"))
+				.build(),
+			Document.builder()
+				.text("Cours d'une autre matière.")
+				.metadata(Map.of(
+					"origin", "COURSE",
+					"subject", Subject.FRENCH.name(),
+					"sourceFile", "french-course.docx",
+					"chapter", "Chapitre de français"))
+				.build()));
+
+		List<CoursePassage> passages = courseSearchService.search("objets techniques", Subject.TECHNOLOGY);
+
+		assertEquals(1, passages.size());
+		assertEquals("Les objets techniques répondent à un besoin.", passages.getFirst().text());
+		assertEquals(docx.getFileName().toString(), passages.getFirst().sourceFile());
+		assertEquals("Chapitre 1 - Les objets techniques", passages.getFirst().chapter());
 	}
 
 	@Test

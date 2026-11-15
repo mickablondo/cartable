@@ -71,7 +71,7 @@ class ReferenceImportServiceImpl implements ReferenceImportService {
 			Path yamlFile = findSidecar(pdfFile, yamlFiles);
 			ReferenceMetadata metadata = readMetadata(yamlFile);
 			String extractedText = extractText(pdfFile);
-			List<String> chunks = textSplitter.split(extractedText);
+			List<ReferenceTextSplitter.Chunk> chunks = textSplitter.split(extractedText);
 			if (chunks.isEmpty()) {
 				throw new ReferenceImportException(
 					"Le PDF " + pdfFile.getFileName() + " ne contient aucun texte exploitable.");
@@ -248,7 +248,7 @@ class ReferenceImportServiceImpl implements ReferenceImportService {
 	}
 
 	private ImportOutcome indexDocument(
-			Path pdfFile, ReferenceMetadata metadata, List<String> chunks, String contentHash) {
+			Path pdfFile, ReferenceMetadata metadata, List<ReferenceTextSplitter.Chunk> chunks, String contentHash) {
 		UUID referenceId = UUID.nameUUIDFromBytes(metadata.sourceUrl().getBytes(StandardCharsets.UTF_8));
 		ExistingReference existing = findExisting(metadata.sourceUrl());
 		if (existing != null && existing.contentHash().equals(contentHash)) {
@@ -261,7 +261,7 @@ class ReferenceImportServiceImpl implements ReferenceImportService {
 				(metadata.sourceUrl() + "#" + index).getBytes(StandardCharsets.UTF_8)).toString();
 			documents.add(Document.builder()
 				.id(documentId)
-				.text(chunks.get(index))
+				.text(chunks.get(index).text())
 				.metadata(Map.of(
 					"origin", "OFFICIAL_REFERENCE",
 					"title", metadata.title(),
@@ -270,7 +270,8 @@ class ReferenceImportServiceImpl implements ReferenceImportService {
 					"license", metadata.license(),
 					"subject", metadata.subject().name(),
 					"publicationDate", metadata.publicationDate().toString(),
-					"sourceFile", pdfFile.getFileName().toString()))
+					"sourceFile", pdfFile.getFileName().toString(),
+					"chapter", chunks.get(index).chapter()))
 				.build());
 		}
 
