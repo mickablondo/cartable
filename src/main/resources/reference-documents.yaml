@@ -1,0 +1,14 @@
+# Ajouter les documents officiels à synchroniser dans cette liste.
+# Format d'une entrée :
+# - id: identifiant-stable
+#   title: titre officiel
+#   subject: HISTORY_GEOGRAPHY
+#   pdfUrl: https://.../document.pdf
+#   pageUrl: https://.../page-officielle
+#   publicationDate: 2025-09-01
+#   license: Licence du document
+#   class: "3e"
+#   schoolYears: ["2025-2026"]
+cartable:
+  reference:
+    documents: []

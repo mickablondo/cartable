@@ -65,9 +65,12 @@ docker compose exec ollama ollama pull bge-m3
 - Découpage sur les titres explicites « Chapitre », « Partie », « Thème », « Séquence » et « Dossier » ; sinon, découpage par taille avec recouvrement, en conservant le statut « Sans chapitre détecté » ;
 - Indexation asynchrone des passages dans pgvector avec la matière choisie à l'import et les métadonnées de source ; un échec reste récupérable dans le registre d'événements Modulith.
 #### v1.4
-- Déposer les PDF officiels et leurs descriptions YAML homonymes dans `data/reference/` (champs `title`, `sourceUrl`, `retrievedAt`, `license`, `subject`, `publicationDate`) ;
-- Lancer l'import une seule fois avec `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--cartable.reference.import.enabled=true"` ; `CARTABLE_REFERENCE_DIRECTORY` permet de changer le dossier ;
-- Les matières YAML utilisent les noms de l'enum, par exemple `HISTORY_GEOGRAPHY`. Les dates sont au format `AAAA-MM-JJ`. Les PDF inchangés déjà indexés sont ignorés ; une modification remplace les passages associés à la même URL source.
+- Import manuel de PDF officiels accompagnés de descriptions YAML homonymes dans `data/reference/` (remplacé par v1.4b).
+#### v1.4b
+- La liste unique des documents officiels se trouve dans `src/main/resources/reference-documents.yaml`. Chaque entrée précise l'identifiant, le titre, la matière, les URL directes du PDF et de la page officielle, la date de publication, la licence, la classe et les années scolaires.
+- Le bouton « Mettre à jour le référentiel » télécharge les PDF dans `data/reference/<id>.pdf`, vérifie leur taille (25 Mo) et leur signature PDF, puis les indexe. Les téléchargements ont des délais d'attente et ne suivent pas les redirections.
+- Une mise à jour n'est pas lancée au démarrage par défaut. Les erreurs sont affichées par document; si le site bloque le téléchargement, déposer le PDF dans `data/reference/<id>.pdf` puis relancer la mise à jour.
+- Les anciens YAML par PDF sont laissés en place, mais ignorés. Un PDF local est utilisé uniquement si son identifiant est déclaré dans le manifeste.
 
 #### v1.5
 - Les API publiques de `course` et `reference` recherchent les quatre passages les plus proches pour une requête et une matière ; le filtrage par origine et matière s'effectue sur les métadonnées pgvector.

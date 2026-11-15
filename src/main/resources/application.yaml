@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: classpath:reference-documents.yaml
   application:
     name: cartable
   profiles:

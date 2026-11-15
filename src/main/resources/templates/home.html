@@ -57,6 +57,28 @@
         <p>Choisissez la matière et le thème de la fiche.</p>
         <a href="/sheets/new">Demander une fiche</a>
     </section>
+
+    <section>
+        <h2>Référentiel officiel</h2>
+        <form method="post" action="/references/update">
+            <button type="submit">Mettre à jour le référentiel</button>
+        </form>
+        <div th:if="${referenceUpdateReport != null}" role="status">
+            <p th:text="${referenceUpdateReport.updatedDocuments + ' document(s) mis à jour, '
+                + referenceUpdateReport.unchangedDocuments + ' inchangé(s), '
+                + referenceUpdateReport.indexedChunks + ' passage(s) indexé(s).'}"></p>
+            <p th:if="${#lists.isEmpty(referenceUpdateReport.issues)}">Aucune erreur.</p>
+            <h3 th:unless="${#lists.isEmpty(referenceUpdateReport.issues)}">Documents à vérifier</h3>
+            <ul th:unless="${#lists.isEmpty(referenceUpdateReport.issues)}">
+                <li th:each="issue : ${referenceUpdateReport.issues}">
+                    <strong th:text="${issue.documentId}"></strong>
+                    (<a th:href="${issue.pdfUrl}" th:text="${issue.pdfUrl}"></a>) :
+                    <span th:text="${issue.reason}"></span>
+                    <span th:if="${issue.localPdfUsed}">Le PDF local a été utilisé.</span>
+                </li>
+            </ul>
+        </div>
+    </section>
 </main>
 </body>
 </html>

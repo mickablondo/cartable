@@ -37,6 +37,7 @@ class HomeControllerTests {
 			.andExpect(content().string(containsString("Importer un cours")))
 			.andExpect(content().string(containsString("Matière")))
 			.andExpect(content().string(containsString("Cours importés")))
+			.andExpect(content().string(containsString("Mettre à jour le référentiel")))
 			.andExpect(content().string(containsString("Aucun cours importé")));
 	}
 
