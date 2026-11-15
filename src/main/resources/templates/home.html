@@ -6,7 +6,57 @@
 </head>
 <body>
 <main>
-    <h1>Hello MiK@</h1>
+    <h1>Cartable</h1>
+
+    <section>
+        <h2>Importer un cours</h2>
+        <p>La taille maximale du fichier est de 25 Mo.</p>
+        <p th:if="${importSuccess}" th:text="${importSuccess}" role="status"></p>
+        <p th:if="${importError}" th:text="${importError}" role="alert"></p>
+        <form method="post" action="/courses" enctype="multipart/form-data">
+            <label for="course-file">Fichier du cours (PDF ou Word)</label>
+            <input id="course-file" type="file" name="file" accept=".pdf,.doc,.docx" required>
+
+            <label for="course-subject">Matière</label>
+            <select id="course-subject" name="subject" required>
+                <option value="" selected disabled>Choisir une matière</option>
+                <option th:each="option : ${subjects}"
+                        th:value="${option.value}"
+                        th:text="${option.label}"></option>
+            </select>
+
+            <button type="submit">Importer le cours</button>
+        </form>
+    </section>
+
+    <section>
+        <h2>Cours importés</h2>
+        <p th:if="${#lists.isEmpty(courses)}">Aucun cours importé pour le moment.</p>
+        <table th:unless="${#lists.isEmpty(courses)}">
+            <thead>
+            <tr>
+                <th scope="col">Fichier</th>
+                <th scope="col">Matière</th>
+                <th scope="col">Importé le</th>
+                <th scope="col">État</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="course : ${courses}">
+                <td th:text="${course.fileName}"></td>
+                <td th:text="${subjectLabels[course.subject]}"></td>
+                <td th:text="${course.importedAt}"></td>
+                <td th:text="${course.status == 'INDEXED' ? 'Indexé' : (course.status == 'IMPORTED' ? 'En attente d’indexation' : course.status)}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>Créer une fiche de révision</h2>
+        <p>Choisissez la matière et le thème de la fiche.</p>
+        <a href="/sheets/new">Demander une fiche</a>
+    </section>
 </main>
 </body>
 </html>

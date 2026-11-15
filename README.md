@@ -81,5 +81,9 @@ docker compose exec ollama ollama pull bge-m3
 #### v1.7
 - L'API du module `sheet` permet de valider explicitement une fiche ; son statut passe de `TO_VERIFY` à `VERIFIED` et l'événement `SheetVerified` est publié.
 - L'export Markdown inclut les notions, définitions, repères et références des sources. Une fiche `TO_VERIFY` porte un avertissement visible.
+#### v1.8
+- La page d'accueil permet d'importer un fichier PDF ou Word avec choix obligatoire de la matière et affiche les cours importés ainsi que leur état d'indexation.
+- Le formulaire de création et la page de fiche permettent de demander une fiche, consulter son contenu, ses sources et son statut, la valider, et l'exporter en Markdown.
+- Les contrôleurs du module `web` ne communiquent avec les modules métier que par leurs API publiques ; l'interface utilise Thymeleaf sans HTMX.
 
-RAF v1 : v1.8 puis corriger v1.4 par v1.4b
+RAF v1 : corriger v1.4 par v1.4b

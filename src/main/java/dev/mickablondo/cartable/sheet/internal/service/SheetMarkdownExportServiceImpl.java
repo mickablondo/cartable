@@ -1,7 +1,5 @@
 package dev.mickablondo.cartable.sheet.internal.service;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,33 +10,19 @@ import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
+import dev.mickablondo.cartable.sheet.SheetQueryService;
 import dev.mickablondo.cartable.sheet.SheetSource;
 import dev.mickablondo.cartable.sheet.SheetStatement;
 import dev.mickablondo.cartable.sheet.SheetStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.json.JsonMapper;
 
 @Service
 class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 
-	private static final TypeReference<List<SheetStatement>> STATEMENTS_TYPE = new TypeReference<>() {
-	};
-	private static final TypeReference<List<SheetDefinition>> DEFINITIONS_TYPE = new TypeReference<>() {
-	};
-	private static final TypeReference<List<String>> STRINGS_TYPE = new TypeReference<>() {
-	};
-	private static final TypeReference<List<SheetSource>> SOURCES_TYPE = new TypeReference<>() {
-	};
+	private final SheetQueryService sheetQueryService;
 
-	private final JdbcTemplate jdbcTemplate;
-	private final JsonMapper jsonMapper;
-
-	SheetMarkdownExportServiceImpl(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper) {
-		this.jdbcTemplate = jdbcTemplate;
-		this.jsonMapper = jsonMapper;
+	SheetMarkdownExportServiceImpl(SheetQueryService sheetQueryService) {
+		this.sheetQueryService = sheetQueryService;
 	}
 
 	@Override
@@ -47,17 +31,9 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 			throw new IllegalArgumentException("L'identifiant de la fiche est obligatoire.");
 		}
 
-		List<Sheet> sheets = jdbcTemplate.query("""
-			SELECT id, subject, theme, key_concepts, definitions, landmarks, limitations, sources, status, generated_at
-			FROM sheet
-			WHERE id = ?
-			""",
-			this::toSheet,
-			sheetId);
-		if (sheets.isEmpty()) {
-			throw new IllegalArgumentException("Aucune fiche ne correspond à cet identifiant.");
-		}
-		return render(sheets.getFirst());
+		Sheet sheet = sheetQueryService.findById(sheetId)
+			.orElseThrow(() -> new IllegalArgumentException("Aucune fiche ne correspond à cet identifiant."));
+		return render(sheet);
 	}
 
 	private static String render(Sheet sheet) {
@@ -192,25 +168,6 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 			case LIFE_AND_EARTH_SCIENCES -> "SVT";
 			case TECHNOLOGY -> "technologie";
 		};
-	}
-
-	private Sheet toSheet(ResultSet resultSet, int rowNumber) throws SQLException {
-		try {
-			return new Sheet(
-				resultSet.getObject("id", UUID.class),
-				Subject.valueOf(resultSet.getString("subject")),
-				resultSet.getString("theme"),
-				jsonMapper.readValue(resultSet.getString("key_concepts"), STATEMENTS_TYPE),
-				jsonMapper.readValue(resultSet.getString("definitions"), DEFINITIONS_TYPE),
-				jsonMapper.readValue(resultSet.getString("landmarks"), STATEMENTS_TYPE),
-				jsonMapper.readValue(resultSet.getString("limitations"), STRINGS_TYPE),
-				jsonMapper.readValue(resultSet.getString("sources"), SOURCES_TYPE),
-				SheetStatus.valueOf(resultSet.getString("status")),
-				resultSet.getTimestamp("generated_at").toInstant());
-		}
-		catch (JacksonException exception) {
-			throw new SQLException("Impossible de lire le contenu structuré de la fiche.", exception);
-		}
 	}
 
 }

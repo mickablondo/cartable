@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Demander une fiche — Cartable</title>
+</head>
+<body>
+<main>
+    <h1>Demander une fiche de révision</h1>
+    <p><a href="/">Retour à l’accueil</a></p>
+    <p th:if="${formError}" th:text="${formError}" role="alert"></p>
+    <form method="post" action="/sheets">
+        <label for="sheet-subject">Matière</label>
+        <select id="sheet-subject" name="subject" required>
+            <option value="" selected disabled>Choisir une matière</option>
+            <option th:each="option : ${subjects}"
+                    th:value="${option.value}"
+                    th:text="${option.label}"></option>
+        </select>
+
+        <label for="sheet-theme">Thème</label>
+        <input id="sheet-theme" type="text" name="theme" required maxlength="200">
+
+        <button type="submit">Générer la fiche</button>
+    </form>
+</main>
+</body>
+</html>

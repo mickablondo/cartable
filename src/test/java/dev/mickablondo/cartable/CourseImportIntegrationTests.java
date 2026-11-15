@@ -51,6 +51,9 @@ class CourseImportIntegrationTests {
 	private CourseImportService courseImportService;
 
 	@Autowired
+	private CourseQueryService courseQueryService;
+
+	@Autowired
 	private CourseSearchService courseSearchService;
 
 	@Autowired
@@ -90,6 +93,12 @@ class CourseImportIntegrationTests {
 		CourseImportResult result = courseImportService.importCourse(pdf, Subject.HISTORY_GEOGRAPHY);
 
 		assertStoredCourse(result, expectedText, pdf);
+		CourseSummary summary = courseQueryService.findAll().stream()
+			.filter(course -> course.id().equals(result.id()))
+			.findFirst()
+			.orElseThrow();
+		assertEquals("INDEXED", summary.status());
+		assertEquals(Subject.HISTORY_GEOGRAPHY, summary.subject());
 		assertEquals(1, applicationEvents.stream(CourseImported.class).count());
 		assertEquals(result.id(), applicationEvents.stream(CourseImported.class).findFirst().orElseThrow().courseId());
 		assertEquals(1, applicationEvents.stream(CourseIndexed.class)

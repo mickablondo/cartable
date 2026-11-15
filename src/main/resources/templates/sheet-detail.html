@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title th:text="${sheet.theme} + ' — Cartable'">Fiche — Cartable</title>
+</head>
+<body>
+<main>
+    <p><a href="/">Retour à l’accueil</a></p>
+    <h1 th:text="${sheet.theme}"></h1>
+    <p><strong>Matière :</strong> <span th:text="${subjectLabel}"></span></p>
+    <p><strong>Statut :</strong> <span th:text="${needsVerification ? 'À vérifier' : 'Vérifiée'}"></span></p>
+    <p th:if="${needsVerification}" role="alert">
+        Cette fiche n’a pas encore été vérifiée. Vérifiez son contenu avant de l’utiliser.
+    </p>
+
+    <section th:if="${!#lists.isEmpty(sheet.keyConcepts)}">
+        <h2>Notions clés</h2>
+        <ul>
+            <li th:each="concept : ${sheet.keyConcepts}">
+                <span th:text="${concept.text}"></span>
+                <span th:each="sourceId : ${concept.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+        </ul>
+    </section>
+
+    <section th:if="${!#lists.isEmpty(sheet.definitions)}">
+        <h2>Définitions</h2>
+        <ul>
+            <li th:each="definition : ${sheet.definitions}">
+                <strong th:text="${definition.term}"></strong> —
+                <span th:text="${definition.definition}"></span>
+                <span th:each="sourceId : ${definition.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+        </ul>
+    </section>
+
+    <section th:if="${!#lists.isEmpty(sheet.landmarks)}">
+        <h2>Repères</h2>
+        <ul>
+            <li th:each="landmark : ${sheet.landmarks}">
+                <span th:text="${landmark.text}"></span>
+                <span th:each="sourceId : ${landmark.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+        </ul>
+    </section>
+
+    <section th:if="${!#lists.isEmpty(sheet.limitations)}">
+        <h2>Points à compléter</h2>
+        <ul>
+            <li th:each="limitation : ${sheet.limitations}" th:text="${limitation}"></li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Sources</h2>
+        <ul>
+            <li th:each="source : ${sheet.sources}">
+                <strong th:text="${'[' + source.id + ']'}"></strong>
+                <span th:if="${source.origin == 'COURSE'}">
+                    Cours — fichier <span th:text="${source.sourceFile}"></span>,
+                    chapitre <span th:text="${source.chapter}"></span>.
+                </span>
+                <span th:if="${source.origin == 'OFFICIAL_REFERENCE'}">
+                    Référentiel officiel — <span th:text="${source.title}"></span>,
+                    fichier <span th:text="${source.sourceFile}"></span>,
+                    chapitre <span th:text="${source.chapter}"></span>,
+                    publié le <span th:text="${source.publicationDate}"></span>.
+                    <a th:href="${source.sourceUrl}" th:text="${source.sourceUrl}"></a>
+                </span>
+            </li>
+        </ul>
+    </section>
+
+    <form th:if="${needsVerification}" method="post" th:action="@{/sheets/{id}/verify(id=${sheet.id})}">
+        <button type="submit">Valider</button>
+    </form>
+    <form method="get" th:action="@{/sheets/{id}/export(id=${sheet.id})}">
+        <button type="submit">Exporter en Markdown</button>
+    </form>
+</main>
+</body>
+</html>
