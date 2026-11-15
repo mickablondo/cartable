@@ -78,4 +78,8 @@ docker compose exec ollama ollama pull bge-m3
 - Le prompt de génération est dans `src/main/resources/prompts/sheet-generation.st`. Les fiches sont enregistrées par Flyway au statut `TO_VERIFY`, puis l'événement `SheetGenerated` est publié.
 - Les tests de génération utilisent un faux `ChatClient` avec des réponses fixes ; aucun modèle réel n'est appelé automatiquement.
 
-RAF v1 : v1.7, v1.8 puis corriger v1.4 par v1.4b
+#### v1.7
+- L'API du module `sheet` permet de valider explicitement une fiche ; son statut passe de `TO_VERIFY` à `VERIFIED` et l'événement `SheetVerified` est publié.
+- L'export Markdown inclut les notions, définitions, repères et références des sources. Une fiche `TO_VERIFY` porte un avertissement visible.
+
+RAF v1 : v1.8 puis corriger v1.4 par v1.4b

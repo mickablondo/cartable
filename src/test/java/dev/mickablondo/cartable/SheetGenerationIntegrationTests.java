@@ -10,7 +10,10 @@ import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetGenerated;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
+import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
 import dev.mickablondo.cartable.sheet.SheetStatement;
+import dev.mickablondo.cartable.sheet.SheetVerificationService;
+import dev.mickablondo.cartable.sheet.SheetVerified;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +37,9 @@ import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -48,6 +53,12 @@ class SheetGenerationIntegrationTests {
 
 	@Autowired
 	private SheetGenerationService sheetGenerationService;
+
+	@Autowired
+	private SheetVerificationService sheetVerificationService;
+
+	@Autowired
+	private SheetMarkdownExportService sheetMarkdownExportService;
 
 	@Autowired
 	private ChatClient chatClient;
@@ -138,6 +149,70 @@ class SheetGenerationIntegrationTests {
 
 		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
 		assertEquals(0, applicationEvents.stream(SheetGenerated.class).count());
+	}
+
+	@Test
+	void verifiesSheetAndPublishesEventOnlyOnce() {
+		fixChatClientResponse(validDraft());
+		Sheet sheet = sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY);
+
+		sheetVerificationService.verify(sheet.id());
+
+		assertEquals("VERIFIED",
+			jdbcTemplate.queryForObject("SELECT status FROM sheet WHERE id = ?", String.class, sheet.id()));
+		assertEquals(1, applicationEvents.stream(SheetVerified.class)
+			.filter(event -> event.sheetId().equals(sheet.id())
+				&& event.subject() == Subject.TECHNOLOGY
+				&& event.theme().equals("Objets techniques"))
+			.count());
+		assertThrows(IllegalStateException.class, () -> sheetVerificationService.verify(sheet.id()));
+		assertEquals(1, applicationEvents.stream(SheetVerified.class).count());
+	}
+
+	@Test
+	void exportsSheetWithCitationsAndVerificationWarning() {
+		fixChatClientResponse(validDraft());
+		Sheet sheet = sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY);
+
+		String unverifiedMarkdown = sheetMarkdownExportService.exportMarkdown(sheet.id());
+
+		assertTrue(unverifiedMarkdown.contains("n'a pas encore été vérifiée"));
+		assertTrue(unverifiedMarkdown.contains("**Statut :** À vérifier"));
+		assertTrue(unverifiedMarkdown.contains("Ils répondent à un besoin. [C1]"));
+		assertTrue(unverifiedMarkdown.contains("Objet technique"));
+		assertTrue(unverifiedMarkdown.contains("Programme de technologie"));
+		assertTrue(unverifiedMarkdown.contains("## Repères"));
+		assertTrue(unverifiedMarkdown.contains("Un besoin est à l'origine de l'objet. [R1]"));
+		assertTrue(unverifiedMarkdown.contains("## Points à compléter"));
+		assertTrue(unverifiedMarkdown.contains("Le cours ne précise pas davantage ce thème."));
+		assertTrue(unverifiedMarkdown.contains("technologie.docx"));
+		assertTrue(unverifiedMarkdown.contains("Chapitre 1 - Objets techniques"));
+		assertTrue(unverifiedMarkdown.contains("https://example.test/technology"));
+		assertTrue(unverifiedMarkdown.contains("2025-09-01"));
+
+		sheetVerificationService.verify(sheet.id());
+		String verifiedMarkdown = sheetMarkdownExportService.exportMarkdown(sheet.id());
+
+		assertFalse(verifiedMarkdown.contains("n'a pas encore été vérifiée"));
+		assertTrue(verifiedMarkdown.contains("**Statut :** Vérifiée"));
+	}
+
+	@Test
+	void rejectsVerificationAndExportForUnknownSheet() {
+		java.util.UUID missingSheetId = java.util.UUID.randomUUID();
+
+		assertThrows(IllegalArgumentException.class, () -> sheetVerificationService.verify(missingSheetId));
+		assertThrows(IllegalArgumentException.class, () -> sheetMarkdownExportService.exportMarkdown(missingSheetId));
+		assertEquals(0, applicationEvents.stream(SheetVerified.class).count());
+	}
+
+	private static SheetDraft validDraft() {
+		return new SheetDraft(
+			"Objets techniques",
+			List.of(new SheetStatement("Ils répondent à un besoin.", List.of("C1"))),
+			List.of(new SheetDefinition("Objet technique", "Objet conçu pour répondre à un besoin.", List.of("R1"))),
+			List.of(new SheetStatement("Un besoin est à l'origine de l'objet.", List.of("R1"))),
+			List.of("Le cours ne précise pas davantage ce thème."));
 	}
 
 	private void fixChatClientResponse(SheetDraft response) {
