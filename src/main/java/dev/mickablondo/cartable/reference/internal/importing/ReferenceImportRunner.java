@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.reference.internal;
+package dev.mickablondo.cartable.reference.internal.importing;
 
 import dev.mickablondo.cartable.reference.ReferenceImportResult;
 import dev.mickablondo.cartable.reference.ReferenceImportService;

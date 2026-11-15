@@ -73,5 +73,9 @@ docker compose exec ollama ollama pull bge-m3
 - Les API publiques de `course` et `reference` recherchent les quatre passages les plus proches pour une requête et une matière ; le filtrage par origine et matière s'effectue sur les métadonnées pgvector.
 - Chaque résultat conserve sa référence : fichier et chapitre pour un cours ; titre, URL, fichier, chapitre et date de publication pour le référentiel.
 - Les recherches depuis `sheet` doivent passer par ces API publiques, sans accès direct au VectorStore ni aux tables des autres modules.
+#### v1.6
+- Le module `sheet` génère une fiche générique structurée à partir des passages trouvés pour le thème et la matière demandés ; chaque notion, définition et repère conserve ses identifiants de source.
+- Le prompt de génération est dans `src/main/resources/prompts/sheet-generation.st`. Les fiches sont enregistrées par Flyway au statut `TO_VERIFY`, puis l'événement `SheetGenerated` est publié.
+- Les tests de génération utilisent un faux `ChatClient` avec des réponses fixes ; aucun modèle réel n'est appelé automatiquement.
 
-RAF v1 : v1.6, v1.7, v1.8 puis corriger v1.4 par v1.4b
+RAF v1 : v1.7, v1.8 puis corriger v1.4 par v1.4b

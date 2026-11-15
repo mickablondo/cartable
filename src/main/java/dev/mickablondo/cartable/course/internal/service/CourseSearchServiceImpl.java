@@ -1,27 +1,26 @@
-package dev.mickablondo.cartable.reference.internal;
+package dev.mickablondo.cartable.course.internal.service;
 
-import java.time.LocalDate;
 import java.util.List;
 
+import dev.mickablondo.cartable.course.CoursePassage;
+import dev.mickablondo.cartable.course.CourseSearchService;
 import dev.mickablondo.cartable.course.Subject;
-import dev.mickablondo.cartable.reference.ReferencePassage;
-import dev.mickablondo.cartable.reference.ReferenceSearchService;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 
 @Service
-class ReferenceSearchServiceImpl implements ReferenceSearchService {
+class CourseSearchServiceImpl implements CourseSearchService {
 
 	private final VectorStore vectorStore;
 
-	ReferenceSearchServiceImpl(VectorStore vectorStore) {
+	CourseSearchServiceImpl(VectorStore vectorStore) {
 		this.vectorStore = vectorStore;
 	}
 
 	@Override
-	public List<ReferencePassage> search(String query, Subject subject) {
+	public List<CoursePassage> search(String query, Subject subject) {
 		if (query == null || query.isBlank()) {
 			throw new IllegalArgumentException("La requête de recherche est obligatoire.");
 		}
@@ -29,30 +28,23 @@ class ReferenceSearchServiceImpl implements ReferenceSearchService {
 			throw new IllegalArgumentException("La matière est obligatoire.");
 		}
 
-		String filter = "origin == 'OFFICIAL_REFERENCE' && subject == '%s'".formatted(subject.name());
+		String filter = "origin == 'COURSE' && subject == '%s'".formatted(subject.name());
 		return vectorStore.similaritySearch(SearchRequest.builder()
 				.query(query)
 				.filterExpression(filter)
 				.build())
 			.stream()
-			.map(ReferenceSearchServiceImpl::toPassage)
+			.map(document -> new CoursePassage(
+				requiredText(document),
+				requiredMetadata(document, "sourceFile"),
+				metadataOrDefault(document, "chapter", "Sans chapitre détecté")))
 			.toList();
-	}
-
-	private static ReferencePassage toPassage(Document document) {
-		return new ReferencePassage(
-			requiredText(document),
-			requiredMetadata(document, "title"),
-			requiredMetadata(document, "sourceUrl"),
-			requiredMetadata(document, "sourceFile"),
-			metadataOrDefault(document, "chapter", "Sans chapitre détecté"),
-			LocalDate.parse(requiredMetadata(document, "publicationDate")));
 	}
 
 	private static String requiredText(Document document) {
 		String text = document.getText();
 		if (text == null) {
-			throw new IllegalStateException("Un passage du référentiel indexé ne contient aucun texte.");
+			throw new IllegalStateException("Un passage de cours indexé ne contient aucun texte.");
 		}
 		return text;
 	}
@@ -60,7 +52,7 @@ class ReferenceSearchServiceImpl implements ReferenceSearchService {
 	private static String requiredMetadata(Document document, String key) {
 		Object value = document.getMetadata().get(key);
 		if (!(value instanceof String text) || text.isBlank()) {
-			throw new IllegalStateException("La métadonnée '" + key + "' est absente d'un passage du référentiel.");
+			throw new IllegalStateException("La métadonnée '" + key + "' est absente d'un passage de cours.");
 		}
 		return text;
 	}

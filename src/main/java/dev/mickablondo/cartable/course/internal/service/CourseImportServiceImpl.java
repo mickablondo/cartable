@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.course.internal;
+package dev.mickablondo.cartable.course.internal.service;
 
 import java.io.IOException;
 import java.nio.file.Files;

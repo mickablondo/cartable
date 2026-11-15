@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.course.internal;
+package dev.mickablondo.cartable.course.internal.indexing;
 
 import dev.mickablondo.cartable.course.CourseImported;
 import dev.mickablondo.cartable.course.CourseIndexed;

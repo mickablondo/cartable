@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.reference.internal;
+package dev.mickablondo.cartable.reference.internal.service;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

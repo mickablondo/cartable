@@ -1,4 +1,4 @@
-package dev.mickablondo.cartable.course.internal;
+package dev.mickablondo.cartable.course.internal.indexing;
 
 import java.util.ArrayList;
 import java.util.List;
