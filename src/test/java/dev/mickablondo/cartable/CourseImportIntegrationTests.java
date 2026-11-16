@@ -97,7 +97,7 @@ class CourseImportIntegrationTests {
 			.filter(course -> course.id().equals(result.id()))
 			.findFirst()
 			.orElseThrow();
-		assertEquals("INDEXED", summary.status());
+		assertEquals(CourseStatus.INDEXED, summary.status());
 		assertEquals(Subject.HISTORY_GEOGRAPHY, summary.subject());
 		assertEquals(1, applicationEvents.stream(CourseImported.class).count());
 		assertEquals(result.id(), applicationEvents.stream(CourseImported.class).findFirst().orElseThrow().courseId());
@@ -232,15 +232,77 @@ class CourseImportIntegrationTests {
 	}
 
 	@Test
-	void rejectsPdfWithoutExtractableTextAsUnsupportedScan(@TempDir Path inputDirectory) throws IOException {
+	void importsScannedPdfAndMarksImageReadingAsRequired(@TempDir Path inputDirectory) throws IOException {
 		Path scannedPdf = inputDirectory.resolve("scanned-course.pdf");
 		Files.write(scannedPdf, pdfDocument(""));
 
-		CourseImportException exception = assertThrows(CourseImportException.class,
-			() -> courseImportService.importCourse(scannedPdf, Subject.MATHEMATICS));
+		CourseImportResult result = courseImportService.importCourse(scannedPdf, Subject.MATHEMATICS);
+		var course = jdbcTemplate.queryForMap("""
+			SELECT status, extracted_text, requires_image_reading
+			FROM course WHERE id = ?
+			""", result.id());
 
-		assertEquals(CourseImportException.Reason.SCAN_NOT_SUPPORTED, exception.getReason());
-		assertTrue(exception.getMessage().contains("scan non supporté avant la V2"));
+		assertEquals("IMPORTED", course.get("status"));
+		assertEquals("", course.get("extracted_text"));
+		assertEquals(true, course.get("requires_image_reading"));
+		assertTrue(result.requiresImageReading());
+		CourseSummary summary = courseQueryService.findAll().stream()
+			.filter(importedCourse -> importedCourse.id().equals(result.id()))
+			.findFirst()
+			.orElseThrow();
+		assertEquals(CourseStatus.IMPORTED, summary.status());
+		assertTrue(summary.requiresImageReading());
+		assertEquals("", courseImportService.getExtractedText(result.id()));
+		assertEquals(0, applicationEvents.stream(CourseImported.class)
+			.filter(event -> event.courseId().equals(result.id()))
+			.count());
+	}
+
+	@Test
+	void importsOrderedImagePagesWithoutStartingImageReading(@TempDir Path inputDirectory) throws IOException {
+		Path firstPage = inputDirectory.resolve("page-1.jpeg");
+		Path secondPage = inputDirectory.resolve("page-2.png");
+		Path thirdPage = inputDirectory.resolve("page-3.webp");
+		Files.write(firstPage, new byte[] { 1, 2, 3 });
+		Files.write(secondPage, new byte[] { 4, 5, 6 });
+		Files.write(thirdPage, new byte[] { 7, 8, 9 });
+
+		CourseImportResult result = courseImportService.importCourse(
+			List.of(firstPage, secondPage, thirdPage), Subject.FRENCH);
+
+		assertEquals("page-1.jpeg", result.fileName());
+		assertEquals("IMPORTED", result.status().name());
+		assertTrue(result.requiresImageReading());
+		assertEquals("", courseImportService.getExtractedText(result.id()));
+		List<Map<String, Object>> pages = jdbcTemplate.queryForList("""
+			SELECT page_number, file_name, source_path, media_type
+			FROM course_page
+			WHERE course_id = ?
+			ORDER BY page_number
+			""", result.id());
+		assertEquals(List.of("page-1.jpeg", "page-2.png", "page-3.webp"),
+			pages.stream().map(page -> page.get("file_name")).toList());
+		assertEquals(List.of("image/jpeg", "image/png", "image/webp"),
+			pages.stream().map(page -> page.get("media_type")).toList());
+		assertEquals(List.of(1, 2, 3),
+			pages.stream().map(page -> page.get("page_number")).toList());
+		assertEquals(-1L, Files.mismatch(DATA_DIRECTORY.resolve((String) pages.get(0).get("source_path")), firstPage));
+		assertEquals(-1L, Files.mismatch(DATA_DIRECTORY.resolve((String) pages.get(1).get("source_path")), secondPage));
+		assertEquals(-1L, Files.mismatch(DATA_DIRECTORY.resolve((String) pages.get(2).get("source_path")), thirdPage));
+		assertEquals(0, applicationEvents.stream(CourseImported.class)
+			.filter(event -> event.courseId().equals(result.id()))
+			.count());
+	}
+
+	@Test
+	void rejectsHeicImagesWithoutAHeicReader(@TempDir Path inputDirectory) throws IOException {
+		Path heic = inputDirectory.resolve("photo.heic");
+		Files.write(heic, new byte[] { 1, 2, 3 });
+
+		CourseImportException exception = assertThrows(CourseImportException.class,
+			() -> courseImportService.importCourse(heic, Subject.MATHEMATICS));
+
+		assertEquals(CourseImportException.Reason.UNSUPPORTED_FORMAT, exception.getReason());
 	}
 
 	@Test

@@ -1,6 +1,7 @@
 package dev.mickablondo.cartable.course;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -16,6 +17,14 @@ public interface CourseImportService {
 	 * @return un objet CourseImportResult représentant le résultat de l'importation
 	 */
 	CourseImportResult importCourse(Path file, Subject subject);
+
+	/**
+	 * Importe un cours composé d'une ou plusieurs images, dans l'ordre fourni.
+	 * @param files fichiers du cours, dans l'ordre des pages
+	 * @param subject matière du cours
+	 * @return le résultat de l'importation
+	 */
+	CourseImportResult importCourse(List<Path> files, Subject subject);
 
 	/**
 	 * Récupère le texte extrait d'un cours importé à partir de son identifiant unique.

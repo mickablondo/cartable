@@ -3,8 +3,11 @@ package dev.mickablondo.cartable.web;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import dev.mickablondo.cartable.course.CourseImportException;
+import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
 import dev.mickablondo.cartable.course.Subject;
 import org.slf4j.Logger;
@@ -28,11 +31,11 @@ class CourseController {
 
 	@PostMapping("/courses")
 	String importCourse(
-			@RequestParam(value = "file", required = false) MultipartFile file,
+			@RequestParam(value = "file", required = false) List<MultipartFile> files,
 			@RequestParam(value = "subject", required = false) Subject subject,
 			RedirectAttributes redirectAttributes) {
-		if (file == null || file.isEmpty()) {
-			redirectAttributes.addFlashAttribute("importError", "Choisissez un fichier de cours.");
+		if (files == null || files.isEmpty() || files.stream().anyMatch(MultipartFile::isEmpty)) {
+			redirectAttributes.addFlashAttribute("importError", "Choisissez au moins un fichier de cours.");
 			return "redirect:/";
 		}
 		if (subject == null) {
@@ -40,22 +43,29 @@ class CourseController {
 			return "redirect:/";
 		}
 
-		String fileName = safeFileName(file.getOriginalFilename());
-		if (fileName == null) {
-			redirectAttributes.addFlashAttribute("importError", "Le nom du fichier est invalide.");
-			return "redirect:/";
-		}
-
-		Path temporaryDirectory = null;
-		Path temporaryFile = null;
+		List<Path> temporaryFiles = new ArrayList<>();
 		try {
-			temporaryDirectory = Files.createTempDirectory("cartable-course-upload-");
-			temporaryFile = temporaryDirectory.resolve(fileName);
-			try (var inputStream = file.getInputStream()) {
-				Files.copy(inputStream, temporaryFile);
+			for (MultipartFile file : files) {
+				String fileName = safeFileName(file.getOriginalFilename());
+				if (fileName == null) {
+					redirectAttributes.addFlashAttribute("importError", "Le nom d'un fichier est invalide.");
+					return "redirect:/";
+				}
+
+				Path temporaryDirectory = Files.createTempDirectory("cartable-course-upload-");
+				Path temporaryFile = temporaryDirectory.resolve(fileName);
+				temporaryFiles.add(temporaryFile);
+				try (var inputStream = file.getInputStream()) {
+					Files.copy(inputStream, temporaryFile);
+				}
 			}
-			courseImportService.importCourse(temporaryFile, subject);
-			redirectAttributes.addFlashAttribute("importSuccess", "Le cours a été importé.");
+
+			CourseImportResult result = courseImportService.importCourse(
+				temporaryFiles, subject);
+			redirectAttributes.addFlashAttribute("importSuccess",
+				result.requiresImageReading()
+					? "Le cours a été importé. La lecture des images reste à effectuer."
+					: "Le cours a été importé.");
 		}
 		catch (CourseImportException exception) {
 			redirectAttributes.addFlashAttribute("importError", exception.getMessage());
@@ -66,7 +76,9 @@ class CourseController {
 			logger.warn("Impossible de traiter le fichier de cours téléversé.", exception);
 		}
 		finally {
-			deleteTemporaryUpload(temporaryFile, temporaryDirectory);
+			for (Path temporaryFile : temporaryFiles) {
+				deleteTemporaryUpload(temporaryFile, temporaryFile.getParent());
+			}
 		}
 		return "redirect:/";
 	}

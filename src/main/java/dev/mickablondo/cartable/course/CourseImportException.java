@@ -22,9 +22,9 @@ public class CourseImportException extends RuntimeException {
 	}
 
 	public enum Reason {
+		NO_FILES,
 		EMPTY_FILE,
 		UNSUPPORTED_FORMAT,
-		SCAN_NOT_SUPPORTED,
 		NO_TEXT_EXTRACTED,
 		FILE_NOT_READABLE,
 		TEXT_EXTRACTION_FAILED,

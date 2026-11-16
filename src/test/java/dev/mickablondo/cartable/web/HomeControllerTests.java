@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import dev.mickablondo.cartable.course.CourseQueryService;
 import dev.mickablondo.cartable.course.CourseSummary;
+import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.Subject;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,20 +39,33 @@ class HomeControllerTests {
 			.andExpect(content().string(containsString("Matière")))
 			.andExpect(content().string(containsString("Cours importés")))
 			.andExpect(content().string(containsString("Mettre à jour le référentiel")))
-			.andExpect(content().string(containsString("Aucun cours importé")));
+			.andExpect(content().string(containsString("Aucun cours importé")))
+			.andExpect(content().string(containsString("multiple")))
+			.andExpect(content().string(containsString(".webp")));
 	}
 
 	@Test
 	void displaysImportedCourseAndItsIndexingStatus() throws Exception {
 		when(courseQueryService.findAll()).thenReturn(List.of(
 			new CourseSummary(UUID.randomUUID(), "cours.docx", Subject.FRENCH, Instant.parse("2026-11-15T10:00:00Z"),
-				"INDEXED")));
+				CourseStatus.INDEXED, false)));
 
 		mockMvc.perform(get("/"))
 			.andExpect(status().isOk())
 			.andExpect(content().string(containsString("cours.docx")))
 			.andExpect(content().string(containsString("Français")))
 			.andExpect(content().string(containsString("Indexé")));
+	}
+
+	@Test
+	void displaysWhenCourseRequiresImageReading() throws Exception {
+		when(courseQueryService.findAll()).thenReturn(List.of(
+			new CourseSummary(UUID.randomUUID(), "page-1.jpg", Subject.FRENCH,
+				Instant.parse("2026-11-15T10:00:00Z"), CourseStatus.IMPORTED, true)));
+
+		mockMvc.perform(get("/"))
+			.andExpect(status().isOk())
+			.andExpect(content().string(containsString("Lecture d’images requise")));
 	}
 
 }

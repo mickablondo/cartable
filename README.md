@@ -89,3 +89,8 @@ docker compose exec ollama ollama pull bge-m3
 - La page d'accueil permet d'importer un fichier PDF ou Word avec choix obligatoire de la matière et affiche les cours importés ainsi que leur état d'indexation.
 - Le formulaire de création et la page de fiche permettent de demander une fiche, consulter son contenu, ses sources et son statut, la valider, et l'exporter en Markdown.
 - Les contrôleurs du module `web` ne communiquent avec les modules métier que par leurs API publiques ; l'interface utilise Thymeleaf sans HTMX.
+
+### v2.1 — Préparation
+- L'import accepte JPEG, PNG et WebP, seuls ou en plusieurs pages dans l'ordre sélectionné, avec une matière obligatoire.
+- Les PDF sans texte extractible sont conservés et marqués comme nécessitant une lecture d'images ; aucune lecture OCR ou multimodale n'est lancée.
+- Les états du cours sont `IMPORTED`, `TEXT_EXTRACTION_IN_PROGRESS`, `TEXT_TO_REVIEW`, `VALIDATED`, `INDEXED` et `FAILED`.
