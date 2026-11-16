@@ -10,6 +10,7 @@ import java.util.UUID;
 import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
 import dev.mickablondo.cartable.course.CourseQueryService;
+import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
@@ -35,6 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -75,9 +77,10 @@ class CourseAndSheetControllerTests {
 
 	@Test
 	void importsCourseWithRequiredSubjectAndDeletesTemporaryUpload() throws Exception {
-		when(courseImportService.importCourse(any(Path.class), eq(Subject.MATHEMATICS)))
+		when(courseImportService.importCourse(anyList(), eq(Subject.MATHEMATICS)))
 			.thenReturn(new CourseImportResult(
-				UUID.randomUUID(), "maths.docx", Subject.MATHEMATICS, Instant.now(), "IMPORTED"));
+				UUID.randomUUID(), "maths.docx", Subject.MATHEMATICS, Instant.now(),
+				CourseStatus.IMPORTED, false));
 		MockMultipartFile file = new MockMultipartFile(
 			"file", "maths.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 			"contenu de test".getBytes());
@@ -86,11 +89,42 @@ class CourseAndSheetControllerTests {
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/"));
 
-		var uploadedPath = org.mockito.ArgumentCaptor.forClass(Path.class);
-		verify(courseImportService).importCourse(uploadedPath.capture(), eq(Subject.MATHEMATICS));
-		assertEquals("maths.docx", uploadedPath.getValue().getFileName().toString());
-		assertFalse(Files.exists(uploadedPath.getValue()));
-		assertFalse(Files.exists(uploadedPath.getValue().getParent()));
+		var uploadedPaths = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(courseImportService).importCourse(uploadedPaths.capture(), eq(Subject.MATHEMATICS));
+		Path uploadedPath = (Path) uploadedPaths.getValue().getFirst();
+		assertEquals("maths.docx", uploadedPath.getFileName().toString());
+		assertFalse(Files.exists(uploadedPath));
+		assertFalse(Files.exists(uploadedPath.getParent()));
+	}
+
+	@Test
+	void importsMultipleImagePagesInSelectionOrder() throws Exception {
+		when(courseImportService.importCourse(anyList(), eq(Subject.MATHEMATICS)))
+			.thenReturn(new CourseImportResult(
+				UUID.randomUUID(), "page-1.jpg", Subject.MATHEMATICS, Instant.now(),
+				CourseStatus.IMPORTED, true));
+		MockMultipartFile firstPage = new MockMultipartFile("file", "page-1.jpg", "image/jpeg", new byte[] { 1 });
+		MockMultipartFile secondPage = new MockMultipartFile("file", "page-2.png", "image/png", new byte[] { 2 });
+
+		mockMvc.perform(multipart("/courses")
+				.file(firstPage)
+				.file(secondPage)
+				.param("subject", "MATHEMATICS"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/"))
+			.andExpect(flash().attribute("importSuccess",
+				"Le cours a été importé. La lecture des images reste à effectuer."));
+
+		var uploadedPaths = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(courseImportService).importCourse(uploadedPaths.capture(), eq(Subject.MATHEMATICS));
+		List<?> paths = uploadedPaths.getValue();
+		assertEquals("page-1.jpg", ((Path) paths.get(0)).getFileName().toString());
+		assertEquals("page-2.png", ((Path) paths.get(1)).getFileName().toString());
+		for (Object path : paths) {
+			Path uploadedPath = (Path) path;
+			assertFalse(Files.exists(uploadedPath));
+			assertFalse(Files.exists(uploadedPath.getParent()));
+		}
 	}
 
 	@Test
@@ -101,7 +135,7 @@ class CourseAndSheetControllerTests {
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/"));
 
-		verify(courseImportService, never()).importCourse(any(Path.class), any());
+		verify(courseImportService, never()).importCourse(anyList(), any());
 	}
 
 	@Test

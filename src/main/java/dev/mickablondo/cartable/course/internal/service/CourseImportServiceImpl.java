@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -14,6 +16,7 @@ import dev.mickablondo.cartable.course.CourseImportException;
 import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
 import dev.mickablondo.cartable.course.CourseImported;
+import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.Subject;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,7 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 class CourseImportServiceImpl implements CourseImportService {
 
-	private static final String IMPORTED_STATUS = "IMPORTED";
+	private static final CourseStatus IMPORTED_STATUS = CourseStatus.IMPORTED;
 
 	private final JdbcTemplate jdbcTemplate;
 	private final ApplicationEventPublisher events;
@@ -47,70 +50,134 @@ class CourseImportServiceImpl implements CourseImportService {
 
 	@Override
 	public CourseImportResult importCourse(Path file, Subject subject) {
+		return importCourse(file == null ? null : List.of(file), subject);
+	}
+
+	@Override
+	public CourseImportResult importCourse(List<Path> files, Subject subject) {
 		if (subject == null) {
 			throw new IllegalArgumentException("La matière est obligatoire.");
 		}
-		if (file == null || !Files.isRegularFile(file) || !Files.isReadable(file)) {
-			throw new CourseImportException(CourseImportException.Reason.FILE_NOT_READABLE,
-				"Le fichier du cours est inaccessible.");
+		if (files == null || files.isEmpty()) {
+			throw new CourseImportException(CourseImportException.Reason.NO_FILES,
+				"Choisissez au moins un fichier de cours.");
 		}
 
-		String fileName = file.getFileName().toString();
-		byte[] fileContent;
-		try {
-			fileContent = Files.readAllBytes(file);
-		}
-		catch (IOException exception) {
-			throw new CourseImportException(CourseImportException.Reason.FILE_NOT_READABLE,
-				"Impossible de lire le fichier du cours.", exception);
-		}
-		if (fileContent.length == 0) {
-			throw new CourseImportException(CourseImportException.Reason.EMPTY_FILE,
-				"Le fichier du cours est vide.");
-		}
-
-		String extension = supportedExtension(fileName);
-		String extractedText = extractText(fileContent, fileName);
-		if (extractedText.isBlank()) {
-			if (extension.equals(".pdf")) {
-				throw new CourseImportException(CourseImportException.Reason.SCAN_NOT_SUPPORTED,
-					"PDF sans texte détectable : scan non supporté avant la V2.");
+		List<ImportFile> importFiles = new ArrayList<>(files.size());
+		for (Path file : files) {
+			if (file == null || !Files.isRegularFile(file) || !Files.isReadable(file)) {
+				throw new CourseImportException(CourseImportException.Reason.FILE_NOT_READABLE,
+					"Le fichier du cours est inaccessible.");
 			}
-			throw new CourseImportException(CourseImportException.Reason.NO_TEXT_EXTRACTED,
-				"Aucun texte n'a été extrait du document Word.");
+
+			String fileName = file.getFileName().toString();
+			String extension = supportedExtension(fileName);
+			byte[] fileContent;
+			try {
+				fileContent = Files.readAllBytes(file);
+			}
+			catch (IOException exception) {
+				throw new CourseImportException(CourseImportException.Reason.FILE_NOT_READABLE,
+					"Impossible de lire le fichier du cours.", exception);
+			}
+			if (fileContent.length == 0) {
+				throw new CourseImportException(CourseImportException.Reason.EMPTY_FILE,
+					"Le fichier du cours est vide.");
+			}
+			importFiles.add(new ImportFile(fileName, extension, fileContent));
+		}
+
+		boolean imageImport = importFiles.getFirst().isImage();
+		if (importFiles.size() > 1 && importFiles.stream().anyMatch(file -> !file.isImage())) {
+			throw new CourseImportException(CourseImportException.Reason.UNSUPPORTED_FORMAT,
+				"Pour un cours en plusieurs pages, sélectionnez uniquement des images.");
+		}
+		if (importFiles.stream().anyMatch(file -> file.isImage() != imageImport)) {
+			throw new CourseImportException(CourseImportException.Reason.UNSUPPORTED_FORMAT,
+				"Un cours ne peut pas mélanger des images et un document PDF ou Word.");
+		}
+
+		String extractedText = "";
+		boolean requiresImageReading = imageImport;
+		if (!imageImport) {
+			ImportFile importFile = importFiles.getFirst();
+			extractedText = extractText(importFile.content(), importFile.fileName());
+			if (extractedText.isBlank()) {
+				if (importFile.extension().equals(".pdf")) {
+					requiresImageReading = true;
+				}
+				else {
+					throw new CourseImportException(CourseImportException.Reason.NO_TEXT_EXTRACTED,
+						"Aucun texte n'a été extrait du document Word.");
+				}
+			}
 		}
 
 		UUID courseId = UUID.randomUUID();
 		Instant importedAt = Instant.now();
-		String relativeFilePath = "courses/" + courseId + extension;
-		Path storedFile = dataDirectory.resolve(relativeFilePath).normalize();
-		storeFile(storedFile, fileContent);
+		List<StoredFile> storedFiles = new ArrayList<>(importFiles.size());
+		for (int index = 0; index < importFiles.size(); index++) {
+			ImportFile importFile = importFiles.get(index);
+			String relativeFilePath = imageImport
+				? "courses/" + courseId + "/pages/%04d%s".formatted(index + 1, importFile.extension())
+				: "courses/" + courseId + importFile.extension();
+			Path storedFile = dataDirectory.resolve(relativeFilePath).normalize();
+			storedFiles.add(new StoredFile(importFile, index + 1, relativeFilePath, storedFile));
+		}
 
-		CourseImportResult result = new CourseImportResult(courseId, fileName, subject, importedAt, IMPORTED_STATUS);
+		try {
+			for (StoredFile storedFile : storedFiles) {
+				storeFile(storedFile.path(), storedFile.importFile().content());
+			}
+		}
+		catch (RuntimeException exception) {
+			deleteStoredFiles(storedFiles, exception);
+			throw exception;
+		}
+
+		String fileName = importFiles.getFirst().fileName();
+		String relativeFilePath = storedFiles.getFirst().relativePath();
+		String textToStore = extractedText;
+		boolean imageReadingRequired = requiresImageReading;
+		CourseImportResult result = new CourseImportResult(
+			courseId, fileName, subject, importedAt, IMPORTED_STATUS, imageReadingRequired);
 		try {
 			return transactionTemplate.execute(status -> {
 				jdbcTemplate.update("""
-					INSERT INTO course (id, file_name, subject, imported_at, status, source_path, extracted_text)
-					VALUES (?, ?, ?, ?, ?, ?, ?)
+					INSERT INTO course (
+						id, file_name, subject, imported_at, status, source_path, extracted_text, requires_image_reading
+					)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 					""",
 					courseId,
 					fileName,
 					subject.name(),
 					Timestamp.from(importedAt),
-					IMPORTED_STATUS,
+					IMPORTED_STATUS.name(),
 					relativeFilePath,
-					extractedText);
-				events.publishEvent(new CourseImported(courseId));
+					textToStore,
+					imageReadingRequired);
+				if (imageImport) {
+					for (StoredFile storedFile : storedFiles) {
+						jdbcTemplate.update("""
+							INSERT INTO course_page (course_id, page_number, file_name, source_path, media_type)
+							VALUES (?, ?, ?, ?, ?)
+							""",
+							courseId,
+							storedFile.pageNumber(),
+							storedFile.importFile().fileName(),
+							storedFile.relativePath(),
+							mediaType(storedFile.importFile().extension()));
+					}
+				}
+				if (!imageReadingRequired) {
+					events.publishEvent(new CourseImported(courseId));
+				}
 				return result;
 			});
 		}
 		catch (RuntimeException exception) {
-			try {
-				Files.deleteIfExists(storedFile);
-			}
-			catch (IOException cleanupException) {
-				exception.addSuppressed(cleanupException);
-			}
+			deleteStoredFiles(storedFiles, exception);
 			throw exception;
 		}
 	}
@@ -130,11 +197,20 @@ class CourseImportServiceImpl implements CourseImportService {
 	private static String supportedExtension(String fileName) {
 		int extensionSeparator = fileName.lastIndexOf('.');
 		String extension = extensionSeparator < 0 ? "" : fileName.substring(extensionSeparator).toLowerCase(Locale.ROOT);
-		if (!extension.equals(".pdf") && !extension.equals(".doc") && !extension.equals(".docx")) {
+		if (!List.of(".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".webp").contains(extension)) {
 			throw new CourseImportException(CourseImportException.Reason.UNSUPPORTED_FORMAT,
-				"Format non supporté : seuls les fichiers PDF et Word (.doc, .docx) sont acceptés.");
+				"Format non supporté : seuls les fichiers PDF, Word (.doc, .docx), JPEG, PNG et WebP sont acceptés.");
 		}
 		return extension;
+	}
+
+	private static String mediaType(String extension) {
+		return switch (extension) {
+			case ".jpg", ".jpeg" -> "image/jpeg";
+			case ".png" -> "image/png";
+			case ".webp" -> "image/webp";
+			default -> throw new IllegalArgumentException("Extension d'image inattendue : " + extension);
+		};
 	}
 
 	private static String extractText(byte[] fileContent, String fileName) {
@@ -165,5 +241,28 @@ class CourseImportServiceImpl implements CourseImportService {
 			throw new CourseImportException(CourseImportException.Reason.FILE_STORAGE_FAILED,
 				"Impossible de stocker le fichier du cours dans data/.", exception);
 		}
+	}
+
+	private static void deleteStoredFiles(List<StoredFile> storedFiles, RuntimeException cause) {
+		for (StoredFile storedFile : storedFiles) {
+			try {
+				Files.deleteIfExists(storedFile.path());
+			}
+			catch (IOException exception) {
+				cause.addSuppressed(exception);
+			}
+		}
+	}
+
+	private record ImportFile(String fileName, String extension, byte[] content) {
+
+		private boolean isImage() {
+			return extension.equals(".jpg") || extension.equals(".jpeg")
+				|| extension.equals(".png") || extension.equals(".webp");
+		}
+
+	}
+
+	private record StoredFile(ImportFile importFile, int pageNumber, String relativePath, Path path) {
 	}
 }

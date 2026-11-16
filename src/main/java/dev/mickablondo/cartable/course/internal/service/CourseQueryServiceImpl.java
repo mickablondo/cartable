@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import dev.mickablondo.cartable.course.CourseQueryService;
 import dev.mickablondo.cartable.course.CourseSummary;
+import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.Subject;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ class CourseQueryServiceImpl implements CourseQueryService {
 	@Override
 	public List<CourseSummary> findAll() {
 		return jdbcTemplate.query("""
-			SELECT id, file_name, subject, imported_at, status
+			SELECT id, file_name, subject, imported_at, status, requires_image_reading
 			FROM course
 			ORDER BY imported_at DESC, id
 			""",
@@ -30,7 +31,8 @@ class CourseQueryServiceImpl implements CourseQueryService {
 				resultSet.getString("file_name"),
 				Subject.valueOf(resultSet.getString("subject")),
 				resultSet.getTimestamp("imported_at").toInstant(),
-				resultSet.getString("status")));
+				CourseStatus.valueOf(resultSet.getString("status")),
+				resultSet.getBoolean("requires_image_reading")));
 	}
 
 }

@@ -10,6 +10,13 @@ import java.util.UUID;
  * @param subject matière du cours
  * @param importedAt date d'importation
  * @param status statut de l'importation
+ * @param requiresImageReading indique si la lecture des images reste à effectuer
  */
-public record CourseImportResult(UUID id, String fileName, Subject subject, Instant importedAt, String status) {
+public record CourseImportResult(
+		UUID id,
+		String fileName,
+		Subject subject,
+		Instant importedAt,
+		CourseStatus status,
+		boolean requiresImageReading) {
 }

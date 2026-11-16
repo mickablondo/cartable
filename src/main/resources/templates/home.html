@@ -14,8 +14,10 @@
         <p th:if="${importSuccess}" th:text="${importSuccess}" role="status"></p>
         <p th:if="${importError}" th:text="${importError}" role="alert"></p>
         <form method="post" action="/courses" enctype="multipart/form-data">
-            <label for="course-file">Fichier du cours (PDF ou Word)</label>
-            <input id="course-file" type="file" name="file" accept=".pdf,.doc,.docx" required>
+            <label for="course-file">Fichier(s) du cours (PDF, Word ou images JPEG, PNG et WebP)</label>
+            <input id="course-file" type="file" name="file"
+                   accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" multiple required>
+            <p>Pour un cours en plusieurs pages, sélectionnez ses images dans l'ordre des pages.</p>
 
             <label for="course-subject">Matière</label>
             <select id="course-subject" name="subject" required>
@@ -46,7 +48,7 @@
                 <td th:text="${course.fileName}"></td>
                 <td th:text="${subjectLabels[course.subject]}"></td>
                 <td th:text="${course.importedAt}"></td>
-                <td th:text="${course.status == 'INDEXED' ? 'Indexé' : (course.status == 'IMPORTED' ? 'En attente d’indexation' : course.status)}"></td>
+                <td th:text="${course.requiresImageReading ? 'Lecture d’images requise' : course.status.label()}"></td>
             </tr>
             </tbody>
         </table>
