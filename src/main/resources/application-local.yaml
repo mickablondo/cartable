@@ -1,4 +1,8 @@
 spring:
+  http:
+    clients:
+      connect-timeout: ${CARTABLE_VISION_CONNECT_TIMEOUT:5s}
+      read-timeout: ${CARTABLE_VISION_READ_TIMEOUT:5m}
   ai:
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
@@ -6,3 +10,7 @@ spring:
         model: ${CARTABLE_CHAT_MODEL:qwen3:8b}
       embedding:
         model: ${CARTABLE_EMBEDDING_MODEL:bge-m3}
+
+cartable:
+  vision:
+    model: ${VISION_MODEL:}

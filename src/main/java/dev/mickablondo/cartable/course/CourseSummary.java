@@ -18,5 +18,18 @@ public record CourseSummary(
 		Subject subject,
 		Instant importedAt,
 		CourseStatus status,
-		boolean requiresImageReading) {
+		boolean requiresImageReading,
+		int totalPages,
+		int processedPages,
+		String failureMessage) {
+
+	public CourseSummary(
+			UUID id,
+			String fileName,
+			Subject subject,
+			Instant importedAt,
+			CourseStatus status,
+			boolean requiresImageReading) {
+		this(id, fileName, subject, importedAt, status, requiresImageReading, 0, 0, null);
+	}
 }
