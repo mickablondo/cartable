@@ -94,3 +94,10 @@ docker compose exec ollama ollama pull bge-m3
 - L'import accepte JPEG, PNG et WebP, seuls ou en plusieurs pages dans l'ordre sélectionné, avec une matière obligatoire.
 - Les PDF sans texte extractible sont conservés et marqués comme nécessitant une lecture d'images ; aucune lecture OCR ou multimodale n'est lancée.
 - Les états du cours sont `IMPORTED`, `TEXT_EXTRACTION_IN_PROGRESS`, `TEXT_TO_REVIEW`, `VALIDATED`, `INDEXED` et `FAILED`.
+
+### v2.2 — Lecture des images
+- Les images importées et les pages des PDF scannés sont envoyées une par une au modèle multimodal Ollama ; une seule requête de vision s'exécute à la fois.
+- Le nom du modèle est requis dans `VISION_MODEL` (sans modèle par défaut). Le délai HTTP par défaut est de 5 minutes et se règle avec `CARTABLE_VISION_READ_TIMEOUT`.
+- Chaque transcription est conservée avec son numéro de page. La progression, les erreurs, et le statut `TEXT_TO_REVIEW` sont affichés sur la page d'accueil.
+- Le prompt interdit d'ajouter ou de corriger du texte, demande `[illisible]` pour les passages illisibles et `[formule à vérifier]` après les formules.
+- Le raisonnement du modèle est désactivé explicitement dans les options de chaque requête. Les tests utilisent des réponses simulées et n'appellent aucun modèle.

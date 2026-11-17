@@ -48,7 +48,16 @@
                 <td th:text="${course.fileName}"></td>
                 <td th:text="${subjectLabels[course.subject]}"></td>
                 <td th:text="${course.importedAt}"></td>
-                <td th:text="${course.requiresImageReading ? 'Lecture d’images requise' : course.status.label()}"></td>
+                <td>
+                    <span th:if="${course.requiresImageReading and course.status.name() == 'IMPORTED'}">
+                        <span title="Lecture d’images requise">En attente de lecture des images</span>
+                    </span>
+                    <span th:unless="${course.requiresImageReading and course.status.name() == 'IMPORTED'}"
+                          th:text="${course.status.label()}"></span>
+                    <span th:if="${course.totalPages > 0}"
+                          th:text="${' — page ' + course.processedPages + '/' + course.totalPages}"></span>
+                    <p th:if="${course.failureMessage}" th:text="${course.failureMessage}" role="alert"></p>
+                </td>
             </tr>
             </tbody>
         </table>

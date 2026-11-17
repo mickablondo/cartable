@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 
 import dev.mickablondo.cartable.course.CourseImportException;
 import dev.mickablondo.cartable.course.CourseImportResult;
+import dev.mickablondo.cartable.course.CourseImageReadingRequested;
 import dev.mickablondo.cartable.course.CourseImportService;
 import dev.mickablondo.cartable.course.CourseImported;
 import dev.mickablondo.cartable.course.CourseStatus;
@@ -170,7 +171,10 @@ class CourseImportServiceImpl implements CourseImportService {
 							mediaType(storedFile.importFile().extension()));
 					}
 				}
-				if (!imageReadingRequired) {
+				if (imageReadingRequired) {
+					events.publishEvent(new CourseImageReadingRequested(courseId));
+				}
+				else {
 					events.publishEvent(new CourseImported(courseId));
 				}
 				return result;
