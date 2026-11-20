@@ -7,8 +7,8 @@ spring:
     default: local
   servlet:
     multipart:
-      max-file-size: 25MB
-      max-request-size: 26MB
+      max-file-size: ${cartable.course.upload.max-file-size}
+      max-request-size: ${cartable.course.upload.max-request-size}
   ai:
     vectorstore:
       pgvector:
@@ -22,7 +22,15 @@ spring:
         schema-initialization:
           enabled: false
 cartable:
+  ai:
+    require-local-models: true
   course:
     data-directory: ${CARTABLE_DATA_DIRECTORY:data}
+    upload:
+      max-images-per-course: ${CARTABLE_COURSE_MAX_IMAGES_PER_COURSE:20}
+      max-image-size: ${CARTABLE_COURSE_MAX_IMAGE_SIZE:15MB}
+      max-scanned-pdf-size: ${CARTABLE_COURSE_MAX_SCANNED_PDF_SIZE:25MB}
+      max-file-size: ${CARTABLE_COURSE_MAX_FILE_SIZE:25MB}
+      max-request-size: ${CARTABLE_COURSE_MAX_REQUEST_SIZE:100MB}
   reference:
     data-directory: ${CARTABLE_REFERENCE_DIRECTORY:data/reference}

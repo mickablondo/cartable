@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 
@@ -42,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @Import({ TestcontainersConfiguration.class, CourseImportIntegrationTests.FakeEmbeddingConfiguration.class })
 @RecordApplicationEvents
 @SpringBootTest
+@TestPropertySource(properties = "cartable.ai.require-local-models=false")
 class CourseImportIntegrationTests {
 
 	private static final Path DATA_DIRECTORY = Path.of(
@@ -290,6 +292,12 @@ class CourseImportIntegrationTests {
 			pages.stream().map(page -> page.get("media_type")).toList());
 		assertEquals(List.of(1, 2, 3),
 			pages.stream().map(page -> page.get("page_number")).toList());
+		for (Map<String, Object> page : pages) {
+			Path relativePath = Path.of((String) page.get("source_path"));
+			assertFalse(relativePath.isAbsolute());
+			assertTrue(relativePath.startsWith(Path.of("courses")));
+			assertTrue(Files.exists(DATA_DIRECTORY.resolve(relativePath)));
+		}
 		assertEquals(-1L, Files.mismatch(DATA_DIRECTORY.resolve((String) pages.get(0).get("source_path")), firstPage));
 		assertEquals(-1L, Files.mismatch(DATA_DIRECTORY.resolve((String) pages.get(1).get("source_path")), secondPage));
 		assertEquals(-1L, Files.mismatch(DATA_DIRECTORY.resolve((String) pages.get(2).get("source_path")), thirdPage));

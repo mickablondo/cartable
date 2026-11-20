@@ -37,6 +37,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 
@@ -47,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Import({ TestcontainersConfiguration.class, ReferenceUpdateIntegrationTests.FakeEmbeddingConfiguration.class })
 @RecordApplicationEvents
 @SpringBootTest
+@TestPropertySource(properties = "cartable.ai.require-local-models=false")
 class ReferenceUpdateIntegrationTests {
 
 	private static final Path REFERENCE_DIRECTORY = Path.of(

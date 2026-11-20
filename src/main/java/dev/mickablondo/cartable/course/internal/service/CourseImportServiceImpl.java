@@ -37,16 +37,19 @@ class CourseImportServiceImpl implements CourseImportService {
 	private final ApplicationEventPublisher events;
 	private final TransactionTemplate transactionTemplate;
 	private final Path dataDirectory;
+	private final CourseUploadProperties uploadProperties;
 
 	CourseImportServiceImpl(
 			JdbcTemplate jdbcTemplate,
 			ApplicationEventPublisher events,
 			TransactionTemplate transactionTemplate,
-			@Value("${cartable.course.data-directory:data}") Path dataDirectory) {
+			@Value("${cartable.course.data-directory:data}") Path dataDirectory,
+			CourseUploadProperties uploadProperties) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.events = events;
 		this.transactionTemplate = transactionTemplate;
 		this.dataDirectory = dataDirectory;
+		this.uploadProperties = uploadProperties;
 	}
 
 	@Override
@@ -65,6 +68,7 @@ class CourseImportServiceImpl implements CourseImportService {
 		}
 
 		List<ImportFile> importFiles = new ArrayList<>(files.size());
+		int imageCount = 0;
 		for (Path file : files) {
 			if (file == null || !Files.isRegularFile(file) || !Files.isReadable(file)) {
 				throw new CourseImportException(CourseImportException.Reason.FILE_NOT_READABLE,
@@ -73,6 +77,25 @@ class CourseImportServiceImpl implements CourseImportService {
 
 			String fileName = file.getFileName().toString();
 			String extension = supportedExtension(fileName);
+			if (isImage(extension) && ++imageCount > uploadProperties.maxImagesPerCourse()) {
+				throw new CourseImportException(CourseImportException.Reason.TOO_MANY_IMAGES,
+					"Un cours ne peut pas contenir plus de %d images.".formatted(
+						uploadProperties.maxImagesPerCourse()));
+			}
+			long fileSize;
+			try {
+				fileSize = Files.size(file);
+			}
+			catch (IOException exception) {
+				throw new CourseImportException(CourseImportException.Reason.FILE_NOT_READABLE,
+					"Impossible de lire le fichier du cours.", exception);
+			}
+			long maxFileSize = uploadProperties.maxSizeFor(extension);
+			if (fileSize > maxFileSize) {
+				throw new CourseImportException(CourseImportException.Reason.FILE_TOO_LARGE,
+					"La taille de %s dépasse la limite configurée (%s).".formatted(
+						fileName, org.springframework.util.unit.DataSize.ofBytes(maxFileSize)));
+			}
 			byte[] fileContent;
 			try {
 				fileContent = Files.readAllBytes(file);
@@ -215,6 +238,11 @@ class CourseImportServiceImpl implements CourseImportService {
 			case ".webp" -> "image/webp";
 			default -> throw new IllegalArgumentException("Extension d'image inattendue : " + extension);
 		};
+	}
+
+	private static boolean isImage(String extension) {
+		return extension.equals(".jpg") || extension.equals(".jpeg")
+			|| extension.equals(".png") || extension.equals(".webp");
 	}
 
 	private static String extractText(byte[] fileContent, String fileName) {

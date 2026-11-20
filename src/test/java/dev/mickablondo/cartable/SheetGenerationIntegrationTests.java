@@ -41,6 +41,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
+import org.springframework.test.context.TestPropertySource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,6 +59,7 @@ import static org.mockito.Mockito.when;
 @Import({ TestcontainersConfiguration.class, SheetGenerationIntegrationTests.FakeGenerationConfiguration.class })
 @RecordApplicationEvents
 @SpringBootTest
+@TestPropertySource(properties = "cartable.ai.require-local-models=false")
 class SheetGenerationIntegrationTests {
 
 	@Autowired

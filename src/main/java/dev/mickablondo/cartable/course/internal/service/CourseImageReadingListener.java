@@ -37,19 +37,23 @@ class CourseImageReadingListener {
 	private final VisionTextClient visionTextClient;
 	private final Path dataDirectory;
 	private final Resource transcriptionPrompt;
+	private final VisionImagePreprocessor imagePreprocessor;
 
 	CourseImageReadingListener(
 			JdbcTemplate jdbcTemplate,
 			PlatformTransactionManager transactionManager,
 			VisionTextClient visionTextClient,
 			@Value("${cartable.course.data-directory:data}") Path dataDirectory,
-			@Value("classpath:/prompts/image-transcription.st") Resource transcriptionPrompt) {
+			@Value("classpath:/prompts/image-transcription.st") Resource transcriptionPrompt,
+			@Value("${cartable.vision.max-image-pixels:12845056}") long maxImagePixels,
+			@Value("${cartable.vision.jpeg-quality:1.0}") float jpegQuality) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.progressTransactions = new TransactionTemplate(transactionManager);
 		this.progressTransactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 		this.visionTextClient = visionTextClient;
 		this.dataDirectory = dataDirectory;
 		this.transcriptionPrompt = transcriptionPrompt;
+		this.imagePreprocessor = new VisionImagePreprocessor(maxImagePixels, jpegQuality);
 	}
 
 	@ApplicationModuleListener
@@ -123,7 +127,8 @@ class CourseImageReadingListener {
 
 	private void transcribePage(UUID courseId, PageSource page, byte[] image, String prompt) {
 		try {
-			String text = visionTextClient.transcribe(prompt, image, page.mediaType());
+			String text = visionTextClient.transcribe(
+				prompt, imagePreprocessor.resizeIfNeeded(image, page.mediaType()), page.mediaType());
 			progressTransactions.executeWithoutResult(status -> jdbcTemplate.update("""
 				UPDATE course_page
 				SET extracted_text = ?
