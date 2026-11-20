@@ -11,21 +11,32 @@
     <p th:if="${reviewError}" th:text="${reviewError}" role="alert"></p>
     <p th:if="${reviewSuccess}" th:text="${reviewSuccess}" role="status"></p>
 
-    <section th:each="page : ${pages}">
-        <h2 th:text="${'Page ' + page.pageNumber + ' — ' + page.fileName}"></h2>
-        <form method="post"
-              th:action="@{/courses/{courseId}/pages/{pageNumber}(courseId=${courseId}, pageNumber=${page.pageNumber})}">
-            <label th:for="${'page-text-' + page.pageNumber}">Texte transcrit</label>
-            <textarea th:id="${'page-text-' + page.pageNumber}"
-                      name="text"
-                      rows="12"
-                      th:text="${page.extractedText}"></textarea>
-            <button type="submit">Enregistrer cette page</button>
-        </form>
-    </section>
+    <table>
+        <tbody>
+        <tr th:each="page : ${pages}">
+            <td>
+                <h2 th:text="${'Page ' + page.pageNumber + ' — ' + page.fileName}"></h2>
+                <img th:src="@{/courses/{courseId}/pages/{pageNumber}/image(courseId=${courseId}, pageNumber=${page.pageNumber})}"
+                     th:alt="${'Image de la page ' + page.pageNumber}" width="500">
+            </td>
+            <td>
+                <form method="post"
+                      th:action="@{/courses/{courseId}/pages/{pageNumber}(courseId=${courseId}, pageNumber=${page.pageNumber})}">
+                    <label th:for="${'page-text-' + page.pageNumber}">Texte transcrit</label>
+                    <textarea th:id="${'page-text-' + page.pageNumber}"
+                              name="text"
+                              rows="16"
+                              cols="60"
+                              th:text="${page.extractedText}"></textarea>
+                    <button type="submit">Valider le texte</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
 
     <form method="post" th:action="@{/courses/{courseId}/validate(courseId=${courseId})}">
-        <button type="submit">Valider le texte et lancer l'indexation</button>
+        <button type="submit">Valider toutes les pages et lancer l'indexation</button>
     </form>
     <p><a href="/">Retour à l'accueil</a></p>
 </main>
