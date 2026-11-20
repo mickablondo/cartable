@@ -5,7 +5,7 @@ public enum CourseStatus {
 	IMPORTED("En attente d'indexation"),
 	TEXT_EXTRACTION_IN_PROGRESS("Extraction du texte en cours"),
 	TEXT_TO_REVIEW("Texte à vérifier"),
-	VALIDATED("Validé"),
+	VALIDATED("Texte validé, en attente d'indexation"),
 	INDEXED("Indexé"),
 	FAILED("Échec");
 

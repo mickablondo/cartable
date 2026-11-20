@@ -13,6 +13,8 @@
         <p>La taille maximale du fichier est de 25 Mo.</p>
         <p th:if="${importSuccess}" th:text="${importSuccess}" role="status"></p>
         <p th:if="${importError}" th:text="${importError}" role="alert"></p>
+        <p th:if="${reviewSuccess}" th:text="${reviewSuccess}" role="status"></p>
+        <p th:if="${reviewError}" th:text="${reviewError}" role="alert"></p>
         <form method="post" action="/courses" enctype="multipart/form-data">
             <label for="course-file">Fichier(s) du cours (PDF, Word ou images JPEG, PNG et WebP)</label>
             <input id="course-file" type="file" name="file"
@@ -49,6 +51,10 @@
                 <td th:text="${subjectLabels[course.subject]}"></td>
                 <td th:text="${course.importedAt}"></td>
                 <td>
+                    <a th:if="${course.status.name() == 'TEXT_TO_REVIEW'}"
+                       th:href="@{/courses/{courseId}/review(courseId=${course.id})}">
+                        Relire et valider le texte
+                    </a>
                     <span th:if="${course.requiresImageReading and course.status.name() == 'IMPORTED'}">
                         <span title="Lecture d’images requise">En attente de lecture des images</span>
                     </span>

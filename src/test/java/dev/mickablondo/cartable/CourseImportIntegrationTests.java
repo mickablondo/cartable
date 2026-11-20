@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,9 @@ class CourseImportIntegrationTests {
 
 	@Autowired
 	private CourseImportService courseImportService;
+
+	@Autowired
+	private CourseReviewService courseReviewService;
 
 	@Autowired
 	private CourseQueryService courseQueryService;
@@ -292,6 +296,76 @@ class CourseImportIntegrationTests {
 		assertEquals(0, applicationEvents.stream(CourseImported.class)
 			.filter(event -> event.courseId().equals(result.id()))
 			.count());
+	}
+
+	@Test
+	void keepsImageCourseUnindexedUntilItsTextIsValidated() {
+		UUID courseId = createCourseToReview("image-course-not-validated-" + UUID.randomUUID() + ".png",
+			"Transcription non vérifiée");
+
+		assertEquals("TEXT_TO_REVIEW", jdbcTemplate.queryForObject(
+			"SELECT status FROM course WHERE id = ?", String.class, courseId));
+		assertEquals(0, indexedPassageCount(courseId));
+	}
+
+	@Test
+	void validatesCorrectedImageTextBeforePublishingIndexingEvent() throws InterruptedException {
+		String fileName = "image-course-validated-" + UUID.randomUUID() + ".png";
+		UUID courseId = createCourseToReview(fileName, "Texte OCR avec une erreur");
+
+		assertEquals(List.of("Texte OCR avec une erreur"),
+			courseReviewService.findPages(courseId).stream().map(CoursePageReview::extractedText).toList());
+		courseReviewService.updatePageText(courseId, 1, "Texte corrigé par l'utilisateur");
+		courseReviewService.validate(courseId);
+
+		assertEquals(1, applicationEvents.stream(CourseTextValidated.class)
+			.filter(event -> event.courseId().equals(courseId))
+			.count());
+		awaitCourseIndexed(courseId);
+		assertEquals(1, indexedPassageCount(courseId));
+		Map<String, Object> metadata = jdbcTemplate.queryForMap("""
+			SELECT metadata ->> 'origin' AS origin,
+			       metadata ->> 'textReviewedAndValidated' AS reviewed
+			FROM vector_store
+			WHERE metadata ->> 'sourceFile' = ?
+			""", fileName);
+		assertEquals("COURSE", metadata.get("origin"));
+		assertEquals("true", metadata.get("reviewed"));
+		assertTrue(jdbcTemplate.queryForList("""
+			SELECT content FROM vector_store WHERE metadata ->> 'sourceFile' = ?
+			""", String.class, fileName).getFirst().contains("Texte corrigé par l'utilisateur"));
+	}
+
+	private UUID createCourseToReview(String fileName, String pageText) {
+		UUID courseId = UUID.randomUUID();
+		String sourcePath = "courses/%s/pages/0001.png".formatted(courseId);
+		jdbcTemplate.update("""
+			INSERT INTO course (
+				id, file_name, subject, imported_at, status, source_path, extracted_text, requires_image_reading
+			)
+			VALUES (?, ?, ?, ?, 'TEXT_TO_REVIEW', ?, ?, FALSE)
+			""",
+			courseId,
+			fileName,
+			Subject.FRENCH.name(),
+			Timestamp.from(java.time.Instant.now()),
+			sourcePath,
+			pageText);
+		jdbcTemplate.update("""
+			INSERT INTO course_page (
+				course_id, page_number, file_name, source_path, media_type, extracted_text
+			)
+			VALUES (?, 1, ?, ?, 'image/png', ?)
+			""", courseId, fileName, sourcePath, pageText);
+		return courseId;
+	}
+
+	private int indexedPassageCount(UUID courseId) {
+		String fileName = jdbcTemplate.queryForObject(
+			"SELECT file_name FROM course WHERE id = ?", String.class, courseId);
+		return jdbcTemplate.queryForObject("""
+			SELECT COUNT(*) FROM vector_store WHERE metadata ->> 'sourceFile' = ?
+			""", Integer.class, fileName);
 	}
 
 	@Test

@@ -2,7 +2,10 @@ package dev.mickablondo.cartable.course.internal.indexing;
 
 import dev.mickablondo.cartable.course.CourseImported;
 import dev.mickablondo.cartable.course.CourseIndexed;
+import dev.mickablondo.cartable.course.CourseStatus;
+import dev.mickablondo.cartable.course.CourseTextValidated;
 import dev.mickablondo.cartable.course.Subject;
+import java.util.UUID;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.ApplicationEventPublisher;
@@ -34,16 +37,31 @@ class CourseIndexingListener {
 
 	@ApplicationModuleListener
 	void onCourseImported(CourseImported event) {
+		indexCourse(event.courseId(), CourseStatus.IMPORTED);
+	}
+
+	@ApplicationModuleListener
+	void onCourseTextValidated(CourseTextValidated event) {
+		indexCourse(event.courseId(), CourseStatus.VALIDATED);
+	}
+
+	private void indexCourse(UUID courseId, CourseStatus expectedStatus) {
 		IndexedCourse course = jdbcTemplate.queryForObject("""
-			SELECT file_name, subject, extracted_text
+			SELECT file_name, subject, extracted_text, status, text_reviewed_and_validated
 			FROM course
 			WHERE id = ?
 			""",
 			(resultSet, rowNumber) -> new IndexedCourse(
 				resultSet.getString("file_name"),
 				Subject.valueOf(resultSet.getString("subject")),
-				resultSet.getString("extracted_text")),
-			event.courseId());
+				resultSet.getString("extracted_text"),
+				CourseStatus.valueOf(resultSet.getString("status")),
+				resultSet.getBoolean("text_reviewed_and_validated")),
+			courseId);
+		if (course.status() != expectedStatus
+				|| (expectedStatus == CourseStatus.VALIDATED && !course.textReviewedAndValidated())) {
+			throw new IllegalStateException("Le cours n'est pas prêt à être indexé.");
+		}
 
 		List<CourseTextSplitter.Chunk> chunks = textSplitter.split(course.extractedText());
 		if (chunks.isEmpty()) {
@@ -58,17 +76,19 @@ class CourseIndexingListener {
 					"subject", course.subject().name(),
 					"level", LEVEL,
 					"chapter", chunk.chapter(),
-					"sourceFile", course.fileName()))
+					"sourceFile", course.fileName(),
+					"textReviewedAndValidated", course.textReviewedAndValidated()))
 				.build())
 			.toList();
 
 		vectorStore.add(documents);
 		int updatedRows = jdbcTemplate.update(
-			"UPDATE course SET status = 'INDEXED' WHERE id = ? AND status = 'IMPORTED'", event.courseId());
+			"UPDATE course SET status = 'INDEXED' WHERE id = ? AND status = ?",
+			courseId, expectedStatus.name());
 		if (updatedRows != 1) {
 			throw new IllegalStateException("Le statut du cours a changé avant la fin de son indexation.");
 		}
-		events.publishEvent(new CourseIndexed(event.courseId(), documents.size()));
+		events.publishEvent(new CourseIndexed(courseId, documents.size()));
 	}
 
 	/**
@@ -77,6 +97,11 @@ class CourseIndexingListener {
 	 * @param subject matière du cours
 	 * @param extractedText texte extrait du cours
 	 */
-	private record IndexedCourse(String fileName, Subject subject, String extractedText) {
+	private record IndexedCourse(
+			String fileName,
+			Subject subject,
+			String extractedText,
+			CourseStatus status,
+			boolean textReviewedAndValidated) {
 	}
 }

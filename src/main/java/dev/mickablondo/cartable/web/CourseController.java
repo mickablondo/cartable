@@ -5,14 +5,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import dev.mickablondo.cartable.course.CourseImportException;
 import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
+import dev.mickablondo.cartable.course.CoursePageReview;
+import dev.mickablondo.cartable.course.CourseReviewException;
+import dev.mickablondo.cartable.course.CourseReviewService;
 import dev.mickablondo.cartable.course.Subject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,9 +31,57 @@ class CourseController {
 	private static final Logger logger = LoggerFactory.getLogger(CourseController.class);
 
 	private final CourseImportService courseImportService;
+	private final CourseReviewService courseReviewService;
 
-	CourseController(CourseImportService courseImportService) {
+	CourseController(CourseImportService courseImportService, CourseReviewService courseReviewService) {
 		this.courseImportService = courseImportService;
+		this.courseReviewService = courseReviewService;
+	}
+
+	@GetMapping("/courses/{courseId}/review")
+	String reviewCourse(
+			@PathVariable UUID courseId,
+			Model model,
+			RedirectAttributes redirectAttributes) {
+		try {
+			List<CoursePageReview> pages = courseReviewService.findPages(courseId);
+			model.addAttribute("courseId", courseId);
+			model.addAttribute("pages", pages);
+			return "course-review";
+		}
+		catch (CourseReviewException exception) {
+			redirectAttributes.addFlashAttribute("reviewError", exception.getMessage());
+			return "redirect:/";
+		}
+	}
+
+	@PostMapping("/courses/{courseId}/pages/{pageNumber}")
+	String updatePageText(
+			@PathVariable UUID courseId,
+			@PathVariable int pageNumber,
+			@RequestParam(value = "text", defaultValue = "") String text,
+			RedirectAttributes redirectAttributes) {
+		try {
+			courseReviewService.updatePageText(courseId, pageNumber, text);
+			redirectAttributes.addFlashAttribute("reviewSuccess", "Le texte de la page a été enregistré.");
+		}
+		catch (CourseReviewException exception) {
+			redirectAttributes.addFlashAttribute("reviewError", exception.getMessage());
+		}
+		return "redirect:/courses/" + courseId + "/review";
+	}
+
+	@PostMapping("/courses/{courseId}/validate")
+	String validateCourse(@PathVariable UUID courseId, RedirectAttributes redirectAttributes) {
+		try {
+			courseReviewService.validate(courseId);
+			redirectAttributes.addFlashAttribute(
+				"reviewSuccess", "Le texte a été validé. Le cours va être indexé.");
+		}
+		catch (CourseReviewException exception) {
+			redirectAttributes.addFlashAttribute("reviewError", exception.getMessage());
+		}
+		return "redirect:/";
 	}
 
 	@PostMapping("/courses")
