@@ -19,6 +19,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.not;
 
 @WebMvcTest(HomeController.class)
 class HomeControllerTests {
@@ -40,6 +41,11 @@ class HomeControllerTests {
 			.andExpect(content().string(containsString("Cours importés")))
 			.andExpect(content().string(containsString("Mettre à jour le référentiel")))
 			.andExpect(content().string(containsString("Aucun cours importé")))
+			.andExpect(content().string(containsString("Choisissez un PDF ou Word")))
+			.andExpect(content().string(containsString("Monter")))
+			.andExpect(content().string(containsString("newlySelectedFiles")))
+			.andExpect(content().string(containsString("[...selectedFiles, ...newlySelectedFiles]")))
+			.andExpect(content().string(containsString("required")))
 			.andExpect(content().string(containsString("multiple")))
 			.andExpect(content().string(containsString(".webp")));
 	}
@@ -79,6 +85,30 @@ class HomeControllerTests {
 			.andExpect(status().isOk())
 			.andExpect(content().string(containsString("Relire et valider le texte")))
 			.andExpect(content().string(containsString("/courses/" + courseId + "/review")));
+	}
+
+	@Test
+	void refreshesHomeWhileCourseProcessingIsInProgress() throws Exception {
+		when(courseQueryService.findAll()).thenReturn(List.of(
+			new CourseSummary(UUID.randomUUID(), "scan.pdf", Subject.FRENCH,
+				Instant.parse("2026-11-15T10:00:00Z"), CourseStatus.TEXT_EXTRACTION_IN_PROGRESS, true)));
+
+		mockMvc.perform(get("/"))
+			.andExpect(status().isOk())
+			.andExpect(content().string(containsString("http-equiv=\"refresh\"")))
+			.andExpect(content().string(containsString("content=\"10\"")))
+			.andExpect(content().string(containsString("s’actualise automatiquement")));
+	}
+
+	@Test
+	void doesNotRefreshHomeWhenNoCourseIsProcessing() throws Exception {
+		when(courseQueryService.findAll()).thenReturn(List.of(
+			new CourseSummary(UUID.randomUUID(), "cours.docx", Subject.FRENCH,
+				Instant.parse("2026-11-15T10:00:00Z"), CourseStatus.INDEXED, false)));
+
+		mockMvc.perform(get("/"))
+			.andExpect(status().isOk())
+			.andExpect(content().string(not(containsString("http-equiv=\"refresh\""))));
 	}
 
 }

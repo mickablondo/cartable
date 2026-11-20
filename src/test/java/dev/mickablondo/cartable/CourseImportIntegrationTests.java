@@ -336,6 +336,63 @@ class CourseImportIntegrationTests {
 			""", String.class, fileName).getFirst().contains("Texte corrigé par l'utilisateur"));
 	}
 
+	@Test
+	void servesStoredImageForPageReview() throws IOException {
+		String fileName = "page-image-" + UUID.randomUUID() + ".png";
+		byte[] imageContent = { 1, 2, 3, 4 };
+		UUID courseId = createCourseToReview(fileName, "Texte à relire");
+		String sourcePath = jdbcTemplate.queryForObject(
+			"SELECT source_path FROM course_page WHERE course_id = ? AND page_number = 1",
+			String.class,
+			courseId);
+		Path imagePath = DATA_DIRECTORY.resolve(sourcePath);
+		Files.createDirectories(imagePath.getParent());
+		Files.write(imagePath, imageContent);
+
+		CoursePageImage image = courseReviewService.findPageImage(courseId, 1);
+
+		assertEquals("image/png", image.mediaType());
+		assertArrayEquals(imageContent, image.content());
+	}
+
+	@Test
+	void rendersScannedPdfPageForReview() throws IOException {
+		UUID courseId = UUID.randomUUID();
+		String sourcePath = "courses/%s/scanned-course.pdf".formatted(courseId);
+		Path pdfPath = DATA_DIRECTORY.resolve(sourcePath);
+		Files.createDirectories(pdfPath.getParent());
+		Files.write(pdfPath, pdfDocument("Page scannée"));
+		jdbcTemplate.update("""
+			INSERT INTO course (
+				id, file_name, subject, imported_at, status, source_path, extracted_text, requires_image_reading
+			)
+			VALUES (?, ?, ?, ?, 'TEXT_TO_REVIEW', ?, ?, FALSE)
+			""",
+			courseId,
+			"scanned-course.pdf",
+			Subject.FRENCH.name(),
+			Timestamp.from(java.time.Instant.now()),
+			sourcePath,
+			"Texte transcrit");
+		jdbcTemplate.update("""
+			INSERT INTO course_page (
+				course_id, page_number, file_name, source_path, media_type, extracted_text, rendered_from_pdf
+			)
+			VALUES (?, 1, ?, ?, 'image/png', ?, TRUE)
+			""",
+			courseId,
+			"scanned-course.pdf — page 1",
+			sourcePath,
+			"Texte transcrit");
+
+		CoursePageImage image = courseReviewService.findPageImage(courseId, 1);
+
+		assertEquals("image/png", image.mediaType());
+		assertArrayEquals(
+			new byte[] { (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A },
+			java.util.Arrays.copyOf(image.content(), 8));
+	}
+
 	private UUID createCourseToReview(String fileName, String pageText) {
 		UUID courseId = UUID.randomUUID();
 		String sourcePath = "courses/%s/pages/0001.png".formatted(courseId);

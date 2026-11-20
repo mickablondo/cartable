@@ -1,13 +1,25 @@
 package dev.mickablondo.cartable.course.internal.service;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
+import javax.imageio.ImageIO;
+
+import dev.mickablondo.cartable.course.CoursePageImage;
 import dev.mickablondo.cartable.course.CoursePageReview;
 import dev.mickablondo.cartable.course.CourseReviewException;
 import dev.mickablondo.cartable.course.CourseReviewService;
 import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.CourseTextValidated;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -19,17 +31,23 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 class CourseReviewServiceImpl implements CourseReviewService {
 
+	private static final float PDF_RENDER_DPI = 150;
+	private static final String PNG_MEDIA_TYPE = "image/png";
+
 	private final JdbcTemplate jdbcTemplate;
 	private final TransactionTemplate transactionTemplate;
 	private final ApplicationEventPublisher events;
+	private final Path dataDirectory;
 
 	CourseReviewServiceImpl(
 			JdbcTemplate jdbcTemplate,
 			TransactionTemplate transactionTemplate,
-			ApplicationEventPublisher events) {
+			ApplicationEventPublisher events,
+			@Value("${cartable.course.data-directory:data}") Path dataDirectory) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.transactionTemplate = transactionTemplate;
 		this.events = events;
+		this.dataDirectory = dataDirectory;
 	}
 
 	@Override
@@ -40,6 +58,57 @@ class CourseReviewServiceImpl implements CourseReviewService {
 			throw new CourseReviewException("Aucune page n'est disponible pour ce cours.");
 		}
 		return pages;
+	}
+
+	@Override
+	public CoursePageImage findPageImage(UUID courseId, int pageNumber) {
+		requireReviewStatus(courseId, false);
+		PageImageSource source;
+		try {
+			source = jdbcTemplate.queryForObject("""
+				SELECT source_path, media_type, rendered_from_pdf
+				FROM course_page
+				WHERE course_id = ? AND page_number = ?
+				""",
+				(resultSet, rowNumber) -> new PageImageSource(
+					resultSet.getString("source_path"),
+					resultSet.getString("media_type"),
+					resultSet.getBoolean("rendered_from_pdf")),
+				courseId,
+				pageNumber);
+		}
+		catch (EmptyResultDataAccessException exception) {
+			throw new CourseReviewException("Cette page n'existe pas pour ce cours.", exception);
+		}
+
+		Path imagePath = resolveSourcePath(source.sourcePath());
+		if (!source.renderedFromPdf()) {
+			try {
+				return new CoursePageImage(Files.readAllBytes(imagePath), source.mediaType());
+			}
+			catch (IOException exception) {
+				throw new CourseReviewException("Impossible de lire l'image de cette page.", exception);
+			}
+		}
+
+		try (PDDocument document = Loader.loadPDF(imagePath.toFile())) {
+			if (pageNumber > document.getNumberOfPages()) {
+				throw new CourseReviewException("Cette page n'existe pas dans le document PDF.");
+			}
+			BufferedImage page = new PDFRenderer(document).renderImageWithDPI(pageNumber - 1, PDF_RENDER_DPI);
+			try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+				if (!ImageIO.write(page, "png", output)) {
+					throw new CourseReviewException("Impossible de convertir l'image de cette page.");
+				}
+				return new CoursePageImage(output.toByteArray(), PNG_MEDIA_TYPE);
+			}
+			finally {
+				page.flush();
+			}
+		}
+		catch (IOException exception) {
+			throw new CourseReviewException("Impossible de lire la page du document PDF.", exception);
+		}
 	}
 
 	@Override
@@ -142,6 +211,18 @@ class CourseReviewServiceImpl implements CourseReviewService {
 					resultSet.getString("file_name"),
 					resultSet.getString("extracted_text")),
 			courseId);
+	}
+
+	private Path resolveSourcePath(String sourcePath) {
+		Path root = dataDirectory.toAbsolutePath().normalize();
+		Path resolved = root.resolve(sourcePath).normalize();
+		if (!resolved.startsWith(root)) {
+			throw new CourseReviewException("Le chemin de l'image n'est pas valide.");
+		}
+		return resolved;
+	}
+
+	private record PageImageSource(String sourcePath, String mediaType, boolean renderedFromPdf) {
 	}
 
 	private void requireReviewStatus(UUID courseId, boolean lockForUpdate) {

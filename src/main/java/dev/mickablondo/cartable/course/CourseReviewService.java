@@ -16,6 +16,14 @@ public interface CourseReviewService {
 	List<CoursePageReview> findPages(UUID courseId);
 
 	/**
+	 * Renvoie l'image d'une page de cours à relire.
+	 * @param courseId identifiant du cours
+	 * @param pageNumber numéro de la page
+	 * @return contenu et type MIME de l'image
+	 */
+	CoursePageImage findPageImage(UUID courseId, int pageNumber);
+
+	/**
 	 * Enregistre le texte corrigé d'une page.
 	 * @param courseId identifiant du cours
 	 * @param pageNumber numéro de la page

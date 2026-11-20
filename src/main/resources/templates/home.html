@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cartable</title>
+    <meta th:if="${hasCoursesInProgress}" http-equiv="refresh" content="10">
 </head>
 <body>
 <main>
@@ -19,7 +20,9 @@
             <label for="course-file">Fichier(s) du cours (PDF, Word ou images JPEG, PNG et WebP)</label>
             <input id="course-file" type="file" name="file"
                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" multiple required>
-            <p>Pour un cours en plusieurs pages, sélectionnez ses images dans l'ordre des pages.</p>
+            <p>Choisissez un PDF ou Word, ou ajoutez les images en une ou plusieurs sélections ; vous pourrez ensuite régler leur ordre.</p>
+            <ol id="course-file-order" aria-live="polite"></ol>
+            <p id="course-file-error" role="alert"></p>
 
             <label for="course-subject">Matière</label>
             <select id="course-subject" name="subject" required>
@@ -35,6 +38,8 @@
 
     <section>
         <h2>Cours importés</h2>
+        <p th:if="${hasCoursesInProgress}">Cette page s’actualise automatiquement toutes les 10 secondes pendant le traitement.</p>
+        <p><a href="/">Actualiser l’état des cours</a></p>
         <p th:if="${#lists.isEmpty(courses)}">Aucun cours importé pour le moment.</p>
         <table th:unless="${#lists.isEmpty(courses)}">
             <thead>
@@ -97,5 +102,63 @@
         </div>
     </section>
 </main>
+<script>
+    const fileInput = document.getElementById("course-file");
+    const fileOrder = document.getElementById("course-file-order");
+    const fileError = document.getElementById("course-file-error");
+    let selectedFiles = [];
+
+    function updateSelectedFiles() {
+        const transfer = new DataTransfer();
+        selectedFiles.forEach(file => transfer.items.add(file));
+        fileInput.files = transfer.files;
+    }
+
+    function renderFileOrder() {
+        fileOrder.replaceChildren();
+        selectedFiles.forEach((file, index) => {
+            const item = document.createElement("li");
+            item.append(document.createTextNode(file.name + " "));
+            for (const control of [
+                {label: "Monter", offset: -1},
+                {label: "Descendre", offset: 1}
+            ]) {
+                const label = control.label;
+                const offset = control.offset;
+                const button = document.createElement("button");
+                button.type = "button";
+                button.textContent = label;
+                button.setAttribute("aria-label", `Déplacer ${file.name} ${label.toLowerCase()}`);
+                button.disabled = index + offset < 0 || index + offset >= selectedFiles.length;
+                button.addEventListener("click", () => {
+                    const otherIndex = index + offset;
+                    const currentFile = selectedFiles[index];
+                    selectedFiles[index] = selectedFiles[otherIndex];
+                    selectedFiles[otherIndex] = currentFile;
+                    updateSelectedFiles();
+                    renderFileOrder();
+                });
+                item.append(button, document.createTextNode(" "));
+            }
+            fileOrder.append(item);
+        });
+
+        const hasNonImage = selectedFiles.some(file => !/\.(jpe?g|png|webp)$/i.test(file.name));
+        const invalidSelection = selectedFiles.length > 1 && hasNonImage;
+        fileInput.setCustomValidity(invalidSelection
+            ? "Choisissez un seul PDF ou document Word, ou plusieurs images uniquement."
+            : "");
+        fileError.textContent = invalidSelection
+            ? "Pour un cours de plusieurs pages, sélectionnez uniquement des images."
+            : "";
+    }
+
+    fileInput.addEventListener("change", () => {
+        const newlySelectedFiles = Array.from(fileInput.files);
+        selectedFiles = [...selectedFiles, ...newlySelectedFiles];
+        updateSelectedFiles();
+        renderFileOrder();
+    });
+</script>
 </body>
 </html>

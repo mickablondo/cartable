@@ -107,3 +107,9 @@ docker compose exec ollama ollama pull bge-m3
 - La page de relecture permet de corriger chaque page séparément ; la validation publie `CourseTextValidated` et déclenche le découpage et l'indexation existants.
 - Les passages de cours portent `origin=COURSE` et la métadonnée `textReviewedAndValidated`; celle-ci vaut `true` pour les textes d'image relus. Les imports PDF et Word numériques gardent leur indexation directe.
 - Les tests vérifient l'absence d'indexation avant validation puis l'indexation du texte corrigé après validation, sans appel au modèle de vision.
+
+### v2.4 — Interface pour les scans
+- Le formulaire permet de réordonner plusieurs images avec des boutons simples, ou d'importer un PDF scanné, et conserve le choix obligatoire de la matière.
+- La page d'accueil s'actualise toutes les 10 secondes tant qu'un cours est en cours de traitement ; un lien permet aussi l'actualisation manuelle.
+- La relecture affiche l'image de chaque page à côté du texte modifiable. « Valider le texte » enregistre la page ; la validation finale de toutes les pages déclenche l'indexation.
+- Les tests de contrôleurs vérifient le formulaire, l'actualisation et l'affichage/accès aux images. Les tests de cours vérifient la lecture des images et le rendu des pages PDF sans appeler de modèle.

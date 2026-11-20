@@ -10,12 +10,16 @@ import java.util.UUID;
 import dev.mickablondo.cartable.course.CourseImportException;
 import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
+import dev.mickablondo.cartable.course.CoursePageImage;
 import dev.mickablondo.cartable.course.CoursePageReview;
 import dev.mickablondo.cartable.course.CourseReviewException;
 import dev.mickablondo.cartable.course.CourseReviewService;
 import dev.mickablondo.cartable.course.Subject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -53,6 +57,16 @@ class CourseController {
 			redirectAttributes.addFlashAttribute("reviewError", exception.getMessage());
 			return "redirect:/";
 		}
+	}
+
+	@GetMapping("/courses/{courseId}/pages/{pageNumber}/image")
+	ResponseEntity<byte[]> pageImage(@PathVariable UUID courseId, @PathVariable int pageNumber) {
+		CoursePageImage image = courseReviewService.findPageImage(courseId, pageNumber);
+		return ResponseEntity.ok()
+			.contentType(MediaType.parseMediaType(image.mediaType()))
+			.cacheControl(CacheControl.noStore())
+			.header("X-Content-Type-Options", "nosniff")
+			.body(image.content());
 	}
 
 	@PostMapping("/courses/{courseId}/pages/{pageNumber}")

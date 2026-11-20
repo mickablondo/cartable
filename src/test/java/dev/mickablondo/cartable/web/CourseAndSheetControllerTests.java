@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
+import dev.mickablondo.cartable.course.CoursePageImage;
 import dev.mickablondo.cartable.course.CoursePageReview;
 import dev.mickablondo.cartable.course.CourseQueryService;
 import dev.mickablondo.cartable.course.CourseReviewService;
@@ -153,13 +154,32 @@ class CourseAndSheetControllerTests {
 			.andExpect(status().isOk())
 			.andExpect(view().name("course-review"))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Texte transcrit")))
-			.andExpect(content().string(org.hamcrest.Matchers.containsString("Valider le texte")));
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Valider le texte")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString(
+				"/courses/" + courseId + "/pages/1/image")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("<table>")));
 
 		mockMvc.perform(post("/courses/{courseId}/pages/{pageNumber}", courseId, 1)
 				.param("text", "Texte corrigé"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/courses/" + courseId + "/review"));
 		verify(courseReviewService).updatePageText(courseId, 1, "Texte corrigé");
+	}
+
+	@Test
+	void servesPageImageWithoutCaching() throws Exception {
+		UUID courseId = UUID.randomUUID();
+		when(courseReviewService.findPageImage(courseId, 2))
+			.thenReturn(new CoursePageImage(new byte[] { 1, 2, 3 }, "image/png"));
+
+		mockMvc.perform(get("/courses/{courseId}/pages/{pageNumber}/image", courseId, 2))
+			.andExpect(status().isOk())
+			.andExpect(content().contentType(MediaType.IMAGE_PNG))
+			.andExpect(header().string("Cache-Control", "no-store"))
+			.andExpect(header().string("X-Content-Type-Options", "nosniff"))
+			.andExpect(content().bytes(new byte[] { 1, 2, 3 }));
+
+		verify(courseReviewService).findPageImage(courseId, 2);
 	}
 
 	@Test
