@@ -101,3 +101,9 @@ docker compose exec ollama ollama pull bge-m3
 - Chaque transcription est conservée avec son numéro de page. La progression, les erreurs, et le statut `TEXT_TO_REVIEW` sont affichés sur la page d'accueil.
 - Le prompt interdit d'ajouter ou de corriger du texte, demande `[illisible]` pour les passages illisibles et `[formule à vérifier]` après les formules.
 - Le raisonnement du modèle est désactivé explicitement dans les options de chaque requête. Les tests utilisent des réponses simulées et n'appellent aucun modèle.
+
+### v2.3 — Relecture avant indexation
+- Un texte lu depuis une image reste `TEXT_TO_REVIEW` et n'est pas indexé tant que l'utilisateur ne l'a pas relu.
+- La page de relecture permet de corriger chaque page séparément ; la validation publie `CourseTextValidated` et déclenche le découpage et l'indexation existants.
+- Les passages de cours portent `origin=COURSE` et la métadonnée `textReviewedAndValidated`; celle-ci vaut `true` pour les textes d'image relus. Les imports PDF et Word numériques gardent leur indexation directe.
+- Les tests vérifient l'absence d'indexation avant validation puis l'indexation du texte corrigé après validation, sans appel au modèle de vision.

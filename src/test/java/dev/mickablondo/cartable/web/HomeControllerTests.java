@@ -68,4 +68,17 @@ class HomeControllerTests {
 			.andExpect(content().string(containsString("Lecture d’images requise")));
 	}
 
+	@Test
+	void offersReviewForTranscribedImageCourse() throws Exception {
+		UUID courseId = UUID.randomUUID();
+		when(courseQueryService.findAll()).thenReturn(List.of(
+			new CourseSummary(courseId, "page-1.jpg", Subject.FRENCH,
+				Instant.parse("2026-11-15T10:00:00Z"), CourseStatus.TEXT_TO_REVIEW, false)));
+
+		mockMvc.perform(get("/"))
+			.andExpect(status().isOk())
+			.andExpect(content().string(containsString("Relire et valider le texte")))
+			.andExpect(content().string(containsString("/courses/" + courseId + "/review")));
+	}
+
 }

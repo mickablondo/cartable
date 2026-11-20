@@ -9,7 +9,9 @@ import java.util.UUID;
 
 import dev.mickablondo.cartable.course.CourseImportResult;
 import dev.mickablondo.cartable.course.CourseImportService;
+import dev.mickablondo.cartable.course.CoursePageReview;
 import dev.mickablondo.cartable.course.CourseQueryService;
+import dev.mickablondo.cartable.course.CourseReviewService;
 import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
@@ -62,6 +64,9 @@ class CourseAndSheetControllerTests {
 
 	@MockitoBean
 	private CourseQueryService courseQueryService;
+
+	@MockitoBean
+	private CourseReviewService courseReviewService;
 
 	@MockitoBean
 	private SheetGenerationService sheetGenerationService;
@@ -136,6 +141,36 @@ class CourseAndSheetControllerTests {
 			.andExpect(redirectedUrl("/"));
 
 		verify(courseImportService, never()).importCourse(anyList(), any());
+	}
+
+	@Test
+	void displaysAndSavesTranscribedImagePagesForReview() throws Exception {
+		UUID courseId = UUID.randomUUID();
+		when(courseReviewService.findPages(courseId)).thenReturn(
+			List.of(new CoursePageReview(1, "page-1.png", "Texte transcrit")));
+
+		mockMvc.perform(get("/courses/{courseId}/review", courseId))
+			.andExpect(status().isOk())
+			.andExpect(view().name("course-review"))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Texte transcrit")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Valider le texte")));
+
+		mockMvc.perform(post("/courses/{courseId}/pages/{pageNumber}", courseId, 1)
+				.param("text", "Texte corrigé"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/courses/" + courseId + "/review"));
+		verify(courseReviewService).updatePageText(courseId, 1, "Texte corrigé");
+	}
+
+	@Test
+	void validatesReviewedImageText() throws Exception {
+		UUID courseId = UUID.randomUUID();
+
+		mockMvc.perform(post("/courses/{courseId}/validate", courseId))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/"));
+
+		verify(courseReviewService).validate(courseId);
 	}
 
 	@Test

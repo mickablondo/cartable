@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Relire un cours — Cartable</title>
+</head>
+<body>
+<main>
+    <h1>Relire le texte du cours</h1>
+    <p>Vérifiez et corrigez chaque page. Rien ne sera indexé avant validation.</p>
+    <p th:if="${reviewError}" th:text="${reviewError}" role="alert"></p>
+    <p th:if="${reviewSuccess}" th:text="${reviewSuccess}" role="status"></p>
+
+    <section th:each="page : ${pages}">
+        <h2 th:text="${'Page ' + page.pageNumber + ' — ' + page.fileName}"></h2>
+        <form method="post"
+              th:action="@{/courses/{courseId}/pages/{pageNumber}(courseId=${courseId}, pageNumber=${page.pageNumber})}">
+            <label th:for="${'page-text-' + page.pageNumber}">Texte transcrit</label>
+            <textarea th:id="${'page-text-' + page.pageNumber}"
+                      name="text"
+                      rows="12"
+                      th:text="${page.extractedText}"></textarea>
+            <button type="submit">Enregistrer cette page</button>
+        </form>
+    </section>
+
+    <form method="post" th:action="@{/courses/{courseId}/validate(courseId=${courseId})}">
+        <button type="submit">Valider le texte et lancer l'indexation</button>
+    </form>
+    <p><a href="/">Retour à l'accueil</a></p>
+</main>
+</body>
+</html>
