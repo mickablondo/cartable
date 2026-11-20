@@ -13,4 +13,6 @@ spring:
 
 cartable:
   vision:
-    model: ${VISION_MODEL:}
+    model: ${VISION_MODEL:qwen2.5vl:7b}
+    max-image-pixels: ${CARTABLE_VISION_MAX_IMAGE_PIXELS:12845056}
+    jpeg-quality: ${CARTABLE_VISION_JPEG_QUALITY:1.0}

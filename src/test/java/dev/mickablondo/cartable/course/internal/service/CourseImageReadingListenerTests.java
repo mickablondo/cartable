@@ -9,14 +9,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.ResultSet;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 import dev.mickablondo.cartable.course.CourseImageReadingRequested;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.invocation.InvocationOnMock;
@@ -33,8 +37,10 @@ class CourseImageReadingListenerTests {
 		UUID courseId = UUID.randomUUID();
 		String firstPagePath = "courses/%s/pages/0001.png".formatted(courseId);
 		String secondPagePath = "courses/%s/pages/0002.png".formatted(courseId);
-		writePage(dataDirectory, firstPagePath, new byte[] { 1 });
-		writePage(dataDirectory, secondPagePath, new byte[] { 2 });
+		byte[] firstImage = png(0x123456);
+		byte[] secondImage = png(0x654321);
+		writePage(dataDirectory, firstPagePath, firstImage);
+		writePage(dataDirectory, secondPagePath, secondImage);
 
 		JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 		stubCourseSource(jdbcTemplate, courseId, "pages.png", firstPagePath);
@@ -46,19 +52,21 @@ class CourseImageReadingListenerTests {
 		VisionTextClient fakeVisionClient = (prompt, image, mediaType) -> {
 			assertThat(prompt).contains("Transcris exactement le texte visible");
 			assertThat(mediaType).isEqualTo("image/png");
-			pageContents.add("%d:%d".formatted(image[0], image.length));
-			return image[0] == 1 ? "Première page" : "Deuxième page";
+			pageContents.add(Arrays.equals(image, firstImage) ? "première" : "deuxième");
+			return Arrays.equals(image, firstImage) ? "Première page" : "Deuxième page";
 		};
 		CourseImageReadingListener listener = new CourseImageReadingListener(
 			jdbcTemplate,
 			mock(PlatformTransactionManager.class),
 			fakeVisionClient,
 			dataDirectory,
-			new ClassPathResource("prompts/image-transcription.st"));
+			new ClassPathResource("prompts/image-transcription.st"),
+			12_845_056,
+			1.0f);
 
 		listener.on(new CourseImageReadingRequested(courseId));
 
-		assertThat(pageContents).containsExactly("1:1", "2:1");
+		assertThat(pageContents).containsExactly("première", "deuxième");
 		verify(jdbcTemplate).update(
 			contains("SET extracted_text = ?"), eq("Première page"), eq(courseId), eq(1));
 		verify(jdbcTemplate).update(
@@ -74,6 +82,18 @@ class CourseImageReadingListenerTests {
 		Path page = root.resolve(relativePath);
 		Files.createDirectories(page.getParent());
 		Files.write(page, bytes);
+	}
+
+	private static byte[] png(int color) throws Exception {
+		BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+		image.setRGB(0, 0, color);
+		try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+			ImageIO.write(image, "png", output);
+			return output.toByteArray();
+		}
+		finally {
+			image.flush();
+		}
 	}
 
 	private static void stubCourseSource(JdbcTemplate jdbcTemplate, UUID courseId, String fileName, String sourcePath)

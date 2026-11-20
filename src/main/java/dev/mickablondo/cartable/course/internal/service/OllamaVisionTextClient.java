@@ -1,5 +1,6 @@
 package dev.mickablondo.cartable.course.internal.service;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 
@@ -23,9 +24,32 @@ class OllamaVisionTextClient implements VisionTextClient {
 
 	OllamaVisionTextClient(
 			OllamaChatModel chatModel,
-			@Value("${cartable.vision.model:}") String modelName) {
+			@Value("${cartable.vision.model:}") String modelName,
+			@Value("${spring.ai.ollama.base-url:http://localhost:11434}") String ollamaBaseUrl) {
 		this.chatModel = chatModel;
 		this.modelName = modelName;
+		requireLocalEndpoint(ollamaBaseUrl);
+	}
+
+	private static void requireLocalEndpoint(String configuredUrl) {
+		URI endpoint;
+		try {
+			endpoint = URI.create(configuredUrl);
+		}
+		catch (IllegalArgumentException exception) {
+			throw new IllegalArgumentException("L'adresse Ollama pour la lecture des scans est invalide.", exception);
+		}
+		String host = endpoint.getHost();
+		boolean loopbackHost = host != null && List.of("localhost", "127.0.0.1", "::1", "[::1]")
+			.contains(host.toLowerCase(Locale.ROOT));
+		boolean localHttpEndpoint = ("http".equalsIgnoreCase(endpoint.getScheme())
+				|| "https".equalsIgnoreCase(endpoint.getScheme()))
+			&& loopbackHost
+			&& endpoint.getUserInfo() == null;
+		if (!localHttpEndpoint) {
+			throw new IllegalArgumentException(
+				"L'adresse Ollama pour la lecture des scans doit désigner localhost (aucun service distant).");
+		}
 	}
 
 	@Override

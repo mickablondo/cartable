@@ -27,7 +27,8 @@ class OllamaVisionTextClientTests {
 		when(chatModel.call(any(Prompt.class))).thenReturn(response);
 		when(response.getResult()).thenReturn(generation);
 		when(generation.getOutput()).thenReturn(new AssistantMessage("Transcription exacte."));
-		OllamaVisionTextClient client = new OllamaVisionTextClient(chatModel, "vision-test");
+		OllamaVisionTextClient client = new OllamaVisionTextClient(
+			chatModel, "vision-test", "http://localhost:11434");
 
 		String text = client.transcribe("Consigne de test", new byte[] { 1, 2, 3 }, "image/png");
 
@@ -42,7 +43,8 @@ class OllamaVisionTextClientTests {
 	@Test
 	void reportsMissingVisionModelWithoutCallingOllama() {
 		OllamaChatModel chatModel = mock(OllamaChatModel.class);
-		OllamaVisionTextClient client = new OllamaVisionTextClient(chatModel, "");
+		OllamaVisionTextClient client = new OllamaVisionTextClient(
+			chatModel, "", "http://127.0.0.1:11434");
 
 		assertThatThrownBy(() -> client.transcribe("Consigne", new byte[] { 1 }, "image/png"))
 			.isInstanceOf(VisionTextException.class)
@@ -58,11 +60,24 @@ class OllamaVisionTextClientTests {
 		when(chatModel.call(any(Prompt.class))).thenReturn(response);
 		when(response.getResult()).thenReturn(generation);
 		when(generation.getOutput()).thenReturn(new AssistantMessage("  "));
-		OllamaVisionTextClient client = new OllamaVisionTextClient(chatModel, "vision-test");
+		OllamaVisionTextClient client = new OllamaVisionTextClient(
+			chatModel, "vision-test", "http://localhost:11434");
 
 		assertThatThrownBy(() -> client.transcribe("Consigne", new byte[] { 1 }, "image/png"))
 			.isInstanceOf(VisionTextException.class)
 			.hasMessageContaining("illisible");
+	}
+
+	@Test
+	void refusesRemoteOllamaEndpointBeforeAnyImageCanBeSent() {
+		OllamaChatModel chatModel = mock(OllamaChatModel.class);
+
+		assertThatThrownBy(() ->
+			new OllamaVisionTextClient(chatModel, "vision-test", "https://cloud.example.test"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("localhost");
+
+		verify(chatModel, never()).call(any(Prompt.class));
 	}
 
 }
