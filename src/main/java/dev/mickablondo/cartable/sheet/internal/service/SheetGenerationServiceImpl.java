@@ -1,5 +1,6 @@
 package dev.mickablondo.cartable.sheet.internal.service;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import dev.mickablondo.cartable.course.CourseSearchService;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.reference.ReferencePassage;
 import dev.mickablondo.cartable.reference.ReferenceSearchService;
+import dev.mickablondo.cartable.sheet.GenericSheet;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
@@ -23,12 +25,17 @@ import dev.mickablondo.cartable.sheet.SheetGenerated;
 import dev.mickablondo.cartable.sheet.SheetKnowledgeOrigin;
 import dev.mickablondo.cartable.sheet.SheetSource;
 import dev.mickablondo.cartable.sheet.SheetStatement;
+import dev.mickablondo.cartable.sheet.SheetTypeOption;
+import dev.mickablondo.cartable.sheet.internal.configuration.SheetVariantDefinition;
+import dev.mickablondo.cartable.sheet.internal.configuration.SheetVariantRegistry;
+import dev.mickablondo.cartable.sheet.internal.model.GenericSheetContent;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
@@ -39,7 +46,9 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 	private final CourseSearchService courseSearchService;
 	private final ReferenceSearchService referenceSearchService;
 	private final ChatClient chatClient;
-	private final Resource generationPrompt;
+	private final Resource commonPrompt;
+	private final ResourceLoader resourceLoader;
+	private final SheetVariantRegistry variantRegistry;
 	private final JdbcTemplate jdbcTemplate;
 	private final JsonMapper jsonMapper;
 	private final ApplicationEventPublisher events;
@@ -48,14 +57,18 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 			CourseSearchService courseSearchService,
 			ReferenceSearchService referenceSearchService,
 			ChatClient chatClient,
-			@Value("classpath:prompts/sheet-generation.st") Resource generationPrompt,
+			@Value("classpath:prompts/sheet-generation-common.st") Resource commonPrompt,
+			ResourceLoader resourceLoader,
+			SheetVariantRegistry variantRegistry,
 			JdbcTemplate jdbcTemplate,
 			JsonMapper jsonMapper,
 			ApplicationEventPublisher events) {
 		this.courseSearchService = courseSearchService;
 		this.referenceSearchService = referenceSearchService;
 		this.chatClient = chatClient;
-		this.generationPrompt = generationPrompt;
+		this.commonPrompt = commonPrompt;
+		this.resourceLoader = resourceLoader;
+		this.variantRegistry = variantRegistry;
 		this.jdbcTemplate = jdbcTemplate;
 		this.jsonMapper = jsonMapper;
 		this.events = events;
@@ -63,12 +76,26 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 
 	@Override
 	public Sheet generate(String theme, Subject subject) {
+		return generate(theme, subject, null);
+	}
+
+	@Override
+	public List<SheetTypeOption> availableTypes() {
+		return variantRegistry.availableTypes();
+	}
+
+	@Override
+	public Sheet generate(String theme, Subject subject, String requestedSheetType) {
 		if (theme == null || theme.isBlank()) {
 			throw new IllegalArgumentException("Le thème est obligatoire.");
 		}
 		if (subject == null) {
 			throw new IllegalArgumentException("La matière est obligatoire.");
 		}
+		String sheetType = requestedSheetType == null || requestedSheetType.isBlank()
+			? variantRegistry.defaultType(subject)
+			: requestedSheetType.strip();
+		SheetVariantDefinition variant = variantRegistry.require(subject, sheetType);
 
 		List<CoursePassage> coursePassages = courseSearchService.search(theme, subject);
 		if (coursePassages.isEmpty()) {
@@ -80,8 +107,9 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		addCoursePassages(coursePassages, sourceCatalog, context, subject);
 		addReferencePassages(referencePassages, sourceCatalog, context, subject);
 
+		String prompt = readPrompt(commonPrompt) + "\n\n" + readPrompt(resourceLoader.getResource(variant.promptResource()));
 		SheetDraft draft = chatClient.prompt()
-			.system(system -> system.text(generationPrompt)
+			.system(system -> system.text(prompt)
 				.param("subject", subjectLabel(subject))
 				.param("theme", theme.strip())
 				.param("passages", String.join("\n\n", context)))
@@ -95,18 +123,25 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 			draft.courseContent(), "Le contenu issu des sources est absent.");
 		List<SheetSource> citedSources = validateAndResolveSources(courseContent, sourceCatalog);
 		List<SheetGeneralKnowledge> generalKnowledge = validateGeneralKnowledge(draft.generalKnowledge());
+		GenericSheetContent variantContent = new GenericSheetContent(
+			courseContent.definitions(), courseContent.landmarks());
 		Instant generatedAt = Instant.now();
-		Sheet sheet = new Sheet(
+		Sheet sheet = new GenericSheet(
 			UUID.randomUUID(),
 			subject,
 			requiredText(draft.theme(), "Le thème généré est vide."),
-			courseContent,
+			variant.sheetType(),
+			variant.schemaVersion(),
+			courseContent.keyConcepts(),
+			variantContent.definitions(),
+			variantContent.landmarks(),
 			generalKnowledge,
 			requiredList(draft.limitations(), "Les limites sont absentes."),
 			citedSources,
+			dev.mickablondo.cartable.sheet.SheetStatus.TO_VERIFY,
 			generatedAt);
 
-		save(sheet);
+		save(sheet, variantContent);
 		events.publishEvent(new SheetGenerated(sheet.id(), sheet.subject(), sheet.theme(), sheet.generatedAt()));
 		return sheet;
 	}
@@ -225,20 +260,24 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		}
 	}
 
-	private void save(Sheet sheet) {
+	private void save(Sheet sheet, GenericSheetContent variantContent) {
 		try {
 			int updatedRows = jdbcTemplate.update("""
 				INSERT INTO sheet
-					(id, subject, theme, key_concepts, definitions, landmarks, general_knowledge, limitations,
-					 sources, status, generated_at)
-				VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)
+					(id, subject, theme, sheet_type, schema_version, variant_data, key_concepts,
+					 definitions, landmarks, general_knowledge, limitations, sources, status, generated_at)
+				VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb,
+					?::jsonb, ?, ?)
 				""",
 				sheet.id(),
 				sheet.subject().name(),
 				sheet.theme(),
-				jsonMapper.writeValueAsString(sheet.courseContent().keyConcepts()),
-				jsonMapper.writeValueAsString(sheet.courseContent().definitions()),
-				jsonMapper.writeValueAsString(sheet.courseContent().landmarks()),
+				sheet.sheetType(),
+				sheet.schemaVersion(),
+				jsonMapper.writeValueAsString(variantContent),
+				jsonMapper.writeValueAsString(sheet.keyConcepts()),
+				jsonMapper.writeValueAsString(variantContent.definitions()),
+				jsonMapper.writeValueAsString(variantContent.landmarks()),
 				jsonMapper.writeValueAsString(sheet.generalKnowledge()),
 				jsonMapper.writeValueAsString(sheet.limitations()),
 				jsonMapper.writeValueAsString(sheet.sources()),
@@ -250,6 +289,15 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		}
 		catch (tools.jackson.core.JacksonException exception) {
 			throw new IllegalStateException("Impossible d'enregistrer le contenu structuré de la fiche.", exception);
+		}
+	}
+
+	private static String readPrompt(Resource resource) {
+		try (var input = resource.getInputStream()) {
+			return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+		}
+		catch (java.io.IOException exception) {
+			throw new IllegalStateException("Impossible de lire le prompt de génération de fiche.", exception);
 		}
 	}
 

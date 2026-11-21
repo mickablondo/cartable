@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import dev.mickablondo.cartable.course.Subject;
+import dev.mickablondo.cartable.sheet.GenericSheet;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
@@ -47,6 +48,7 @@ class SheetController {
 	@GetMapping("/sheets/new")
 	String newSheet(Model model) {
 		model.addAttribute("subjects", SubjectOptions.all());
+		model.addAttribute("sheetTypes", sheetGenerationService.availableTypes());
 		return "sheet-form";
 	}
 
@@ -54,6 +56,7 @@ class SheetController {
 	String generate(
 			@RequestParam(value = "subject", required = false) String subjectValue,
 			@RequestParam(value = "theme", required = false) String theme,
+			@RequestParam(value = "sheetType", required = false) String sheetType,
 			RedirectAttributes redirectAttributes) {
 		Subject subject;
 		try {
@@ -73,9 +76,9 @@ class SheetController {
 
 		Sheet sheet;
 		try {
-			sheet = sheetGenerationService.generate(theme.strip(), subject);
+			sheet = sheetGenerationService.generate(theme.strip(), subject, sheetType);
 		}
-		catch (NoCoursePassagesFoundException exception) {
+		catch (NoCoursePassagesFoundException | IllegalArgumentException exception) {
 			redirectAttributes.addFlashAttribute("formError", exception.getMessage());
 			return "redirect:/sheets/new";
 		}
@@ -86,6 +89,7 @@ class SheetController {
 	String show(@PathVariable UUID sheetId, Model model) {
 		Sheet sheet = findSheet(sheetId);
 		model.addAttribute("sheet", sheet);
+		model.addAttribute("genericSheet", sheet instanceof GenericSheet genericSheet ? genericSheet : null);
 		model.addAttribute("subjectLabel", SubjectOptions.label(sheet.subject()));
 		model.addAttribute("needsVerification", sheet.status() == SheetStatus.TO_VERIFY);
 		return "sheet-detail";

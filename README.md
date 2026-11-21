@@ -79,7 +79,7 @@ docker compose exec ollama ollama pull bge-m3
 #### v1.6
 - Le module `sheet` génère une fiche hybride : le contenu issu des cours et du référentiel garde ses identifiants de source, tandis que le complément de connaissances générales est séparé, étiqueté `GENERAL_KNOWLEDGE` et à vérifier.
 - Un élément sourcé sans identifiant de source valide ou un élément du complément qui cite une source est refusé. Sans passage de cours trouvé pour le thème, la génération s'arrête avec un message explicite.
-- Le prompt de génération est dans `src/main/resources/prompts/sheet-generation.st`. En mathématiques et sciences, il interdit les exemples numériques inventés et demande que les formules du complément soient marquées « à vérifier ». Les fiches sont enregistrées par Flyway au statut `TO_VERIFY`, puis l'événement `SheetGenerated` est publié.
+- Les règles communes du prompt sont dans `src/main/resources/prompts/sheet-generation-common.st` et sont assemblées avec le prompt de la variante (`sheet-generation-generic.st`). En mathématiques et sciences, elles interdisent les exemples numériques inventés et demandent que les formules du complément soient marquées « à vérifier ». Les fiches sont enregistrées par Flyway au statut `TO_VERIFY`, puis l'événement `SheetGenerated` est publié.
 - Les tests de génération utilisent un faux `ChatClient` avec des réponses fixes ; aucun modèle réel n'est appelé automatiquement.
 
 #### v1.7
@@ -90,31 +90,32 @@ docker compose exec ollama ollama pull bge-m3
 - Le formulaire de création et la page de fiche permettent de demander une fiche, consulter son contenu, ses sources et son statut, la valider, et l'exporter en Markdown.
 - Les contrôleurs du module `web` ne communiquent avec les modules métier que par leurs API publiques ; l'interface utilise Thymeleaf sans HTMX.
 
-### v2.1 — Préparation
+### v2
+#### v2.1 — Préparation
 - L'import accepte JPEG, PNG et WebP, seuls ou en plusieurs pages dans l'ordre sélectionné, avec une matière obligatoire.
 - Les PDF sans texte extractible sont conservés et marqués comme nécessitant une lecture d'images ; aucune lecture OCR ou multimodale n'est lancée.
 - Les états du cours sont `IMPORTED`, `TEXT_EXTRACTION_IN_PROGRESS`, `TEXT_TO_REVIEW`, `VALIDATED`, `INDEXED` et `FAILED`.
 
-### v2.2 — Lecture des images
+#### v2.2 — Lecture des images
 - Les images importées et les pages des PDF scannés sont envoyées une par une au modèle multimodal Ollama ; une seule requête de vision s'exécute à la fois.
 - Le modèle multimodal est configuré par `VISION_MODEL` ; il reste local à Ollama. Le délai HTTP par défaut est de 5 minutes et se règle avec `CARTABLE_VISION_READ_TIMEOUT`.
 - Chaque transcription est conservée avec son numéro de page. La progression, les erreurs, et le statut `TEXT_TO_REVIEW` sont affichés sur la page d'accueil.
 - Le prompt interdit d'ajouter ou de corriger du texte, demande `[illisible]` pour les passages illisibles et `[formule à vérifier]` après les formules.
 - Le raisonnement du modèle est désactivé explicitement dans les options de chaque requête. Les tests utilisent des réponses simulées et n'appellent aucun modèle.
 
-### v2.3 — Relecture avant indexation
+#### v2.3 — Relecture avant indexation
 - Un texte lu depuis une image reste `TEXT_TO_REVIEW` et n'est pas indexé tant que l'utilisateur ne l'a pas relu.
 - La page de relecture permet de corriger chaque page séparément ; la validation publie `CourseTextValidated` et déclenche le découpage et l'indexation existants.
 - Les passages de cours portent `origin=COURSE` et la métadonnée `textReviewedAndValidated`; celle-ci vaut `true` pour les textes d'image relus. Les imports PDF et Word numériques gardent leur indexation directe.
 - Les tests vérifient l'absence d'indexation avant validation puis l'indexation du texte corrigé après validation, sans appel au modèle de vision.
 
-### v2.4 — Interface pour les scans
+#### v2.4 — Interface pour les scans
 - Le formulaire permet de réordonner plusieurs images avec des boutons simples, ou d'importer un PDF scanné, et conserve le choix obligatoire de la matière.
 - La page d'accueil s'actualise toutes les 10 secondes tant qu'un cours est en cours de traitement ; un lien permet aussi l'actualisation manuelle.
 - La relecture affiche l'image de chaque page à côté du texte modifiable. « Valider le texte » enregistre la page ; la validation finale de toutes les pages déclenche l'indexation.
 - Les tests de contrôleurs vérifient le formulaire, l'actualisation et l'affichage/accès aux images. Les tests de cours vérifient la lecture des images et le rendu des pages PDF sans appeler de modèle.
 
-### v2.5 — Durcissement des scans
+#### v2.5 — Durcissement des scans
 - Les images restent sous `data/courses/<id>/pages/` ; la base conserve uniquement des chemins relatifs. `data/` est ignoré par Git. Le texte transcrit reste dans PostgreSQL local.
 - Le lecteur d'images utilise `OllamaChatModel` et refuse au démarrage toute URL Ollama autre que `localhost`, `127.0.0.1` ou `::1`. Au démarrage, une vérification refuse également tout modèle de conversation ou d'embedding qui n'est pas fourni par Ollama : l'ajout ultérieur d'un fournisseur cloud nécessite donc une décision et ne peut pas envoyer silencieusement les images ou leur texte hors de la machine.
 - Les limites par défaut sont de 20 images par cours, 15 Mo par image, 25 Mo par fichier PDF ou document, et 100 Mo par requête. Elles se règlent avec `CARTABLE_COURSE_MAX_IMAGES_PER_COURSE`, `CARTABLE_COURSE_MAX_IMAGE_SIZE`, `CARTABLE_COURSE_MAX_SCANNED_PDF_SIZE`, `CARTABLE_COURSE_MAX_FILE_SIZE` et `CARTABLE_COURSE_MAX_REQUEST_SIZE`. Le PDF est limité avant d'examiner s'il est scanné. Le démarrage refuse des valeurs incohérentes, notamment une requête qui ne peut contenir au moins trois images à leur taille maximale ou un fichier individuel maximal. La limite globale multipart d'un fichier est `max-file-size` ; elle doit couvrir les limites d'image et de PDF.
@@ -122,3 +123,10 @@ docker compose exec ollama ollama pull bge-m3
 - Qwen2.5-VL documente une plage par défaut de 4 à 16 384 jetons visuels par image et propose des plafonds plus bas comme compromis de performance/coût. Le prétraitement conserve le plafond haut par défaut : `CARTABLE_VISION_MAX_IMAGE_PIXELS` vaut `16 384 × 28 × 28` (12 845 056 pixels), et `CARTABLE_VISION_JPEG_QUALITY` vaut `1.0`. Seules les images JPEG/PNG et les pages PDF rendues au-delà du plafond sont réduites ; les fichiers originaux ne sont jamais modifiés. Le JDK n'ayant pas de décodeur WebP intégré, les WebP sont transmis tels quels à Ollama pour son prétraitement natif. Références : [fiche officielle Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#quickstart) et [vision Ollama](https://docs.ollama.com/capabilities/vision).
 - Pour changer de modèle, installer un modèle multimodal local dans Ollama, puis définir `VISION_MODEL` à son nom et tag exacts (par exemple `qwen2.5vl:7b`) avant de lancer l'application. Garder `OLLAMA_BASE_URL` sur une adresse locale ; les noms sont configurés dans `application-local.yaml`, pas dans le code.
 - Pour comparer manuellement la qualité, conserver un petit jeu identique de pages non personnelles avec leur transcription de référence, couvrant écriture manuscrite, accents, tableaux et formules. Pour chaque modèle, comparer la transcription ligne par ligne, compter les mots erronés/omis par page, relever séparément les erreurs de formules et de structure, et noter les passages signalés illisibles ainsi que le temps de lecture. Garder les mêmes images et consignes pour chaque essai ; aucun modèle réel n'est appelé par les tests automatiques.
+
+### v3
+#### v3.1 — Structure des fiches spécialisées
+- `Sheet` est une interface scellée ; `GenericSheet` reste le type par défaut. Le type est sélectionné explicitement avec la matière, sans déduction depuis le contenu.
+- Le registre associe les couples matière/type disponibles. Chaque variante dispose d'un prompt distinct et partage les consignes communes sans les recopier.
+- Les colonnes communes restent relationnelles ; le contenu propre à la variante est stocké dans `variant_data` en JSONB avec `schema_version`. La migration V12 copie le contenu générique historique dans ce JSON et conserve les colonnes `definitions` et `landmarks`.
+- Un type, une version ou un contenu JSON non pris en charge est présenté en mode dégradé avec un message, sans empêcher la lecture des données communes.
