@@ -7,39 +7,34 @@ import java.util.UUID;
 import dev.mickablondo.cartable.course.Subject;
 
 /**
- * Fiche générique produite à partir de passages retrouvés.
- * @param id identifiant unique de la fiche
- * @param subject matière choisie par l'utilisateur
- * @param theme thème de la fiche
- * @param courseContent contenu étayé par des sources
- * @param generalKnowledge complément sans source, à vérifier
- * @param limitations éléments que les passages ne permettent pas de préciser
- * @param sources références des passages cités
- * @param status statut de validation
- * @param generatedAt date de génération
+ * Partie commune aux fiches, indépendamment du contenu propre à leur variante.
  */
-public record Sheet(
-		UUID id,
-		Subject subject,
-		String theme,
-		SheetCourseContent courseContent,
-		List<SheetGeneralKnowledge> generalKnowledge,
-		List<String> limitations,
-		List<SheetSource> sources,
-		SheetStatus status,
-		Instant generatedAt) {
+public sealed interface Sheet permits GenericSheet, UnavailableSheet {
 
-	public Sheet(
-			UUID id,
-			Subject subject,
-			String theme,
-			SheetCourseContent courseContent,
-			List<SheetGeneralKnowledge> generalKnowledge,
-			List<String> limitations,
-			List<SheetSource> sources,
-			Instant generatedAt) {
-		this(id, subject, theme, courseContent, generalKnowledge, limitations, sources, SheetStatus.TO_VERIFY,
-			generatedAt);
+	UUID id();
+
+	Subject subject();
+
+	String theme();
+
+	String sheetType();
+
+	int schemaVersion();
+
+	List<SheetStatement> keyConcepts();
+
+	List<SheetGeneralKnowledge> generalKnowledge();
+
+	List<String> limitations();
+
+	List<SheetSource> sources();
+
+	SheetStatus status();
+
+	Instant generatedAt();
+
+	default String degradationMessage() {
+		return null;
 	}
 
 }

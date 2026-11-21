@@ -2,6 +2,8 @@ package dev.mickablondo.cartable;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.ArrayList;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.nio.charset.StandardCharsets;
@@ -15,9 +17,11 @@ import dev.mickablondo.cartable.sheet.SheetGenerated;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
 import dev.mickablondo.cartable.sheet.SheetKnowledgeOrigin;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
+import dev.mickablondo.cartable.sheet.SheetQueryService;
 import dev.mickablondo.cartable.sheet.SheetStatement;
 import dev.mickablondo.cartable.sheet.SheetVerificationService;
 import dev.mickablondo.cartable.sheet.SheetVerified;
+import dev.mickablondo.cartable.sheet.UnavailableSheet;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +49,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -72,6 +77,9 @@ class SheetGenerationIntegrationTests {
 	private SheetMarkdownExportService sheetMarkdownExportService;
 
 	@Autowired
+	private SheetQueryService sheetQueryService;
+
+	@Autowired
 	private ChatClient chatClient;
 
 	@Autowired
@@ -83,13 +91,19 @@ class SheetGenerationIntegrationTests {
 	@Autowired
 	private ApplicationEvents applicationEvents;
 
-	@Value("classpath:prompts/sheet-generation.st")
-	private Resource generationPrompt;
+	private final List<String> suppliedPrompts = new ArrayList<>();
+
+	@Value("classpath:prompts/sheet-generation-common.st")
+	private Resource commonPrompt;
+
+	@Value("classpath:prompts/sheet-generation-generic.st")
+	private Resource genericPrompt;
 
 	@BeforeEach
 	void setUp() {
 		jdbcTemplate.update("DELETE FROM sheet");
 		jdbcTemplate.update("DELETE FROM vector_store");
+		suppliedPrompts.clear();
 		clearInvocations(chatClient);
 		vectorStore.add(List.of(
 			Document.builder()
@@ -137,7 +151,9 @@ class SheetGenerationIntegrationTests {
 		assertEquals(1, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet WHERE id = ?", Integer.class, sheet.id()));
 
 		Map<String, Object> stored = jdbcTemplate.queryForMap("""
-			SELECT subject, status, key_concepts -> 0 -> 'sourceIds' ->> 0 AS concept_source,
+			SELECT subject, status, sheet_type, schema_version,
+			       variant_data -> 'definitions' -> 0 ->> 'term' AS variant_definition,
+			       key_concepts -> 0 -> 'sourceIds' ->> 0 AS concept_source,
 			       definitions -> 0 -> 'sourceIds' ->> 0 AS definition_source,
 			       general_knowledge -> 0 ->> 'origin' AS general_origin,
 			       general_knowledge -> 0 -> 'sourceIds' AS general_sources,
@@ -147,6 +163,9 @@ class SheetGenerationIntegrationTests {
 			""", sheet.id());
 		assertEquals("TECHNOLOGY", stored.get("subject"));
 		assertEquals("TO_VERIFY", stored.get("status"));
+		assertEquals("GENERIC", stored.get("sheet_type"));
+		assertEquals(1, stored.get("schema_version"));
+		assertEquals("Objet technique", stored.get("variant_definition"));
 		assertEquals("C1", stored.get("concept_source"));
 		assertEquals("R1", stored.get("definition_source"));
 		assertEquals("GENERAL_KNOWLEDGE", stored.get("general_origin"));
@@ -283,13 +302,75 @@ class SheetGenerationIntegrationTests {
 		fixChatClientResponse(validDraft());
 		sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY);
 
-		String prompt = new String(generationPrompt.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+		String common = new String(commonPrompt.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+		String variant = new String(genericPrompt.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+		String prompt = common + variant;
 		assertTrue(prompt.contains("courseContent"));
 		assertTrue(prompt.contains("generalKnowledge"));
 		assertTrue(prompt.contains("GENERAL_KNOWLEDGE"));
 		assertTrue(prompt.contains("ne présente jamais une connaissance générale comme venant du cours"));
 		assertTrue(prompt.contains("n'invente aucun exemple numérique"));
 		assertTrue(prompt.contains("Toute formule placée dans `generalKnowledge` doit être explicitement suivie de « à vérifier »"));
+		assertTrue(common.contains("Les règles de citation et de séparation ci-dessus s'appliquent à tous les types"));
+		assertTrue(variant.contains("courseContent.definitions"));
+		assertEquals(1, suppliedPrompts.size());
+		assertTrue(suppliedPrompts.getFirst().contains("Les règles de citation et de séparation"));
+		assertTrue(suppliedPrompts.getFirst().contains("courseContent.definitions"));
+	}
+
+	@Test
+	void rejectsTypeNotExplicitlyAvailableForTheSelectedSubject() {
+		assertThrows(IllegalArgumentException.class,
+			() -> sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY, "CHRONOLOGY"));
+		verify(chatClient, org.mockito.Mockito.never()).prompt();
+	}
+
+	@Test
+	void unknownTypeAndSchemaVersionAreReadableInDegradedMode() {
+		UUID unknownTypeId = UUID.randomUUID();
+		jdbcTemplate.update("""
+			INSERT INTO sheet
+				(id, subject, theme, sheet_type, schema_version, variant_data, key_concepts,
+				 definitions, landmarks, general_knowledge, limitations, sources, status, generated_at)
+			VALUES (?, 'TECHNOLOGY', 'Fiche inconnue', 'FUTURE_TYPE', 1, '{}'::jsonb, '[]'::jsonb,
+				'[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'TO_VERIFY', now())
+			""", unknownTypeId);
+
+		Sheet unknownType = sheetQueryService.findById(unknownTypeId).orElseThrow();
+		assertInstanceOf(UnavailableSheet.class, unknownType);
+		assertTrue(unknownType.degradationMessage().contains("FUTURE_TYPE"));
+
+		UUID oldSchemaId = UUID.randomUUID();
+		jdbcTemplate.update("""
+			INSERT INTO sheet
+				(id, subject, theme, sheet_type, schema_version, variant_data, key_concepts,
+				 definitions, landmarks, general_knowledge, limitations, sources, status, generated_at)
+			VALUES (?, 'TECHNOLOGY', 'Ancienne fiche', 'GENERIC', 0,
+				'{"definitions":[],"landmarks":[]}'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+				'[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'TO_VERIFY', now())
+			""", oldSchemaId);
+
+		Sheet oldSchema = sheetQueryService.findById(oldSchemaId).orElseThrow();
+		assertInstanceOf(UnavailableSheet.class, oldSchema);
+		assertTrue(oldSchema.degradationMessage().contains("version 0"));
+	}
+
+	@Test
+	void unknownJsonPayloadIsReadableInDegradedMode() {
+		UUID sheetId = UUID.randomUUID();
+		jdbcTemplate.update("""
+			INSERT INTO sheet
+				(id, subject, theme, sheet_type, schema_version, variant_data, key_concepts,
+				 definitions, landmarks, general_knowledge, limitations, sources, status, generated_at)
+			VALUES (?, 'TECHNOLOGY', 'Fiche évolutive', 'GENERIC', 1,
+				'{"definitions":[],"landmarks":[],"futureField":"ignored"}'::jsonb,
+				'[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+				'TO_VERIFY', now())
+			""", sheetId);
+
+		Sheet sheet = sheetQueryService.findById(sheetId).orElseThrow();
+		assertInstanceOf(UnavailableSheet.class, sheet);
+		assertTrue(sheet.degradationMessage().contains("format JSON"));
 	}
 
 	@Test
@@ -316,7 +397,10 @@ class SheetGenerationIntegrationTests {
 		ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
 		ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
 		PromptSystemSpec systemSpec = mock(PromptSystemSpec.class);
-		when(systemSpec.text(any(Resource.class))).thenReturn(systemSpec);
+		doAnswer(invocation -> {
+			suppliedPrompts.add(invocation.getArgument(0, String.class));
+			return systemSpec;
+		}).when(systemSpec).text(anyString());
 		when(systemSpec.param(anyString(), any())).thenReturn(systemSpec);
 		when(chatClient.prompt()).thenReturn(request);
 		doAnswer(invocation -> {

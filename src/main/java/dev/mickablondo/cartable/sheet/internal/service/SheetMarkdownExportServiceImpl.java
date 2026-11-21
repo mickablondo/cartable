@@ -8,7 +8,7 @@ import java.util.stream.Collectors;
 
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.Sheet;
-import dev.mickablondo.cartable.sheet.SheetCourseContent;
+import dev.mickablondo.cartable.sheet.GenericSheet;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
@@ -44,11 +44,16 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 			markdown.append("> **⚠️ Cette fiche n'a pas encore été vérifiée. Vérifiez son contenu avant de l'utiliser.**\n\n");
 		}
 		markdown.append("**Matière :** ").append(subjectLabel(sheet.subject())).append("  \n")
+			.append("**Type de fiche :** ").append(sheet.sheetType()).append("  \n")
 			.append("**Statut :** ").append(sheet.status() == SheetStatus.VERIFIED ? "Vérifiée" : "À vérifier")
 			.append("\n\n");
 
 		Map<String, SheetSource> sources = indexSources(sheet.sources());
-		appendCourseContent(markdown, sheet.courseContent(), sources);
+		appendCourseContent(markdown, sheet, sources);
+		if (sheet.degradationMessage() != null) {
+			markdown.append("## Contenu partiellement indisponible\n\n")
+				.append(sheet.degradationMessage()).append("\n\n");
+		}
 		appendGeneralKnowledge(markdown, sheet.generalKnowledge());
 		appendLimitations(markdown, sheet.limitations());
 		appendSources(markdown, sheet.sources());
@@ -56,14 +61,20 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 	}
 
 	private static void appendCourseContent(
-			StringBuilder markdown, SheetCourseContent content, Map<String, SheetSource> sources) {
-		if (content.keyConcepts().isEmpty() && content.definitions().isEmpty() && content.landmarks().isEmpty()) {
+			StringBuilder markdown, Sheet sheet, Map<String, SheetSource> sources) {
+		List<SheetDefinition> definitions = sheet instanceof GenericSheet genericSheet
+			? genericSheet.definitions()
+			: List.of();
+		List<SheetStatement> landmarks = sheet instanceof GenericSheet genericSheet
+			? genericSheet.landmarks()
+			: List.of();
+		if (sheet.keyConcepts().isEmpty() && definitions.isEmpty() && landmarks.isEmpty()) {
 			return;
 		}
 		markdown.append("## Contenu issu du cours et du référentiel — avec sources\n\n");
-		appendStatements(markdown, "### Notions clés", content.keyConcepts(), sources);
-		appendDefinitions(markdown, content.definitions(), sources);
-		appendStatements(markdown, "### Repères", content.landmarks(), sources);
+		appendStatements(markdown, "### Notions clés", sheet.keyConcepts(), sources);
+		appendDefinitions(markdown, definitions, sources);
+		appendStatements(markdown, "### Repères", landmarks, sources);
 	}
 
 	private static void appendGeneralKnowledge(StringBuilder markdown, List<SheetGeneralKnowledge> items) {

@@ -9,27 +9,29 @@
     <p><a href="/">Retour à l’accueil</a></p>
     <h1 th:text="${sheet.theme}"></h1>
     <p><strong>Matière :</strong> <span th:text="${subjectLabel}"></span></p>
+    <p><strong>Type de fiche :</strong> <span th:text="${sheet.sheetType}"></span></p>
     <p><strong>Statut :</strong> <span th:text="${needsVerification ? 'À vérifier' : 'Vérifiée'}"></span></p>
+    <p th:if="${sheet.degradationMessage}" th:text="${sheet.degradationMessage}" role="alert"></p>
     <p th:if="${needsVerification}" role="alert">
         Cette fiche n’a pas encore été vérifiée. Vérifiez son contenu avant de l’utiliser.
     </p>
 
-    <section th:if="${!#lists.isEmpty(sheet.courseContent.keyConcepts) or !#lists.isEmpty(sheet.courseContent.definitions) or !#lists.isEmpty(sheet.courseContent.landmarks)}">
+    <section th:if="${!#lists.isEmpty(sheet.keyConcepts) or (genericSheet != null and (!#lists.isEmpty(genericSheet.definitions) or !#lists.isEmpty(genericSheet.landmarks)))}">
         <h2>Contenu issu du cours et du référentiel — avec sources</h2>
-        <div th:if="${!#lists.isEmpty(sheet.courseContent.keyConcepts)}">
+        <div th:if="${!#lists.isEmpty(sheet.keyConcepts)}">
             <h3>Notions clés</h3>
             <ul>
-            <li th:each="concept : ${sheet.courseContent.keyConcepts}">
+            <li th:each="concept : ${sheet.keyConcepts}">
                 <span th:text="${concept.text}"></span>
                 <span th:each="sourceId : ${concept.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
             </li>
             </ul>
         </div>
 
-        <div th:if="${!#lists.isEmpty(sheet.courseContent.definitions)}">
+        <div th:if="${genericSheet != null and !#lists.isEmpty(genericSheet.definitions)}">
             <h3>Définitions</h3>
             <ul>
-            <li th:each="definition : ${sheet.courseContent.definitions}">
+            <li th:each="definition : ${genericSheet.definitions}">
                 <strong th:text="${definition.term}"></strong> —
                 <span th:text="${definition.definition}"></span>
                 <span th:each="sourceId : ${definition.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
@@ -37,10 +39,10 @@
             </ul>
         </div>
 
-        <div th:if="${!#lists.isEmpty(sheet.courseContent.landmarks)}">
+        <div th:if="${genericSheet != null and !#lists.isEmpty(genericSheet.landmarks)}">
             <h3>Repères</h3>
             <ul>
-            <li th:each="landmark : ${sheet.courseContent.landmarks}">
+            <li th:each="landmark : ${genericSheet.landmarks}">
                 <span th:text="${landmark.text}"></span>
                 <span th:each="sourceId : ${landmark.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
             </li>

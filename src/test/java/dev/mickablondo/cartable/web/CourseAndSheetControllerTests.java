@@ -16,6 +16,7 @@ import dev.mickablondo.cartable.course.CourseReviewService;
 import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
+import dev.mickablondo.cartable.sheet.GenericSheet;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
@@ -28,6 +29,8 @@ import dev.mickablondo.cartable.sheet.SheetSource;
 import dev.mickablondo.cartable.sheet.SheetStatement;
 import dev.mickablondo.cartable.sheet.SheetStatus;
 import dev.mickablondo.cartable.sheet.SheetVerificationService;
+import dev.mickablondo.cartable.sheet.SheetTypeOption;
+import dev.mickablondo.cartable.sheet.UnavailableSheet;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -195,20 +198,26 @@ class CourseAndSheetControllerTests {
 
 	@Test
 	void displaysSheetRequestFormWithFrenchSubjectChoices() throws Exception {
+		when(sheetGenerationService.availableTypes())
+			.thenReturn(List.of(new SheetTypeOption("GENERIC", "Fiche générique")));
+
 		mockMvc.perform(get("/sheets/new"))
 			.andExpect(status().isOk())
 			.andExpect(view().name("sheet-form"))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Matière")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Mathématiques")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Type de fiche")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Fiche générique")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Thème")));
 	}
 
 	@Test
 	void generatesSheetOnlyWhenSubjectAndThemeAreProvided() throws Exception {
 		Sheet sheet = sampleSheet();
-		when(sheetGenerationService.generate("Géométrie", Subject.MATHEMATICS)).thenReturn(sheet);
+		when(sheetGenerationService.generate("Géométrie", Subject.MATHEMATICS, "GENERIC")).thenReturn(sheet);
 
-		mockMvc.perform(post("/sheets").param("subject", "MATHEMATICS").param("theme", " Géométrie "))
+		mockMvc.perform(post("/sheets").param("subject", "MATHEMATICS").param("theme", " Géométrie ")
+				.param("sheetType", "GENERIC"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/sheets/" + sheet.id()));
 
@@ -216,13 +225,13 @@ class CourseAndSheetControllerTests {
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/sheets/new"));
 
-		verify(sheetGenerationService).generate("Géométrie", Subject.MATHEMATICS);
-		verify(sheetGenerationService, never()).generate("", Subject.MATHEMATICS);
+		verify(sheetGenerationService).generate("Géométrie", Subject.MATHEMATICS, "GENERIC");
+		verify(sheetGenerationService, never()).generate("", Subject.MATHEMATICS, "GENERIC");
 	}
 
 	@Test
 	void reportsWhenNoCoursePassageIsAvailable() throws Exception {
-		when(sheetGenerationService.generate("Géométrie", Subject.MATHEMATICS))
+		when(sheetGenerationService.generate("Géométrie", Subject.MATHEMATICS, null))
 			.thenThrow(new NoCoursePassagesFoundException());
 
 		mockMvc.perform(post("/sheets").param("subject", "MATHEMATICS").param("theme", "Géométrie"))
@@ -260,6 +269,30 @@ class CourseAndSheetControllerTests {
 	}
 
 	@Test
+	void displaysDegradedSheetWithAnExplanatoryMessage() throws Exception {
+		Sheet sheet = new UnavailableSheet(
+			UUID.randomUUID(),
+			Subject.MATHEMATICS,
+			"Géométrie plane",
+			"FUTURE_TYPE",
+			2,
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of(),
+			SheetStatus.TO_VERIFY,
+			Instant.parse("2026-11-15T10:00:00Z"),
+			"La fiche est affichée en mode dégradé.");
+		when(sheetQueryService.findById(sheet.id())).thenReturn(Optional.of(sheet));
+
+		mockMvc.perform(get("/sheets/{id}", sheet.id()))
+			.andExpect(status().isOk())
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("FUTURE_TYPE")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString(
+				"La fiche est affichée en mode dégradé.")));
+	}
+
+	@Test
 	void validatesSheetAndExportsMarkdownAsDownload() throws Exception {
 		Sheet sheet = sampleSheet();
 		when(sheetQueryService.findById(sheet.id())).thenReturn(Optional.of(sheet));
@@ -284,14 +317,15 @@ class CourseAndSheetControllerTests {
 		SheetSource referenceSource = new SheetSource(
 			"R1", "OFFICIAL_REFERENCE", "programme.pdf", "Géométrie", "Programme de mathématiques",
 			"https://example.test/geometry", java.time.LocalDate.parse("2025-09-01"));
-		return new Sheet(
+		return new GenericSheet(
 			UUID.fromString("6a7dce15-8fb2-4c64-b9f0-d20c470e32d4"),
 			Subject.MATHEMATICS,
 			"Géométrie plane",
-			new SheetCourseContent(
-				List.of(new SheetStatement("Les angles d'un triangle ont une somme de 180°.", List.of("C1"))),
-				List.of(new SheetDefinition("Triangle", "Polygone à trois côtés.", List.of("C1"))),
-				List.of()),
+			"GENERIC",
+			1,
+			List.of(new SheetStatement("Les angles d'un triangle ont une somme de 180°.", List.of("C1"))),
+			List.of(new SheetDefinition("Triangle", "Polygone à trois côtés.", List.of("C1"))),
+			List.of(),
 			List.of(new SheetGeneralKnowledge(
 				"Un triangle peut aussi être classé selon ses côtés.", SheetKnowledgeOrigin.GENERAL_KNOWLEDGE)),
 			List.of(),

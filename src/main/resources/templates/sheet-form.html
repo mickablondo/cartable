@@ -18,6 +18,14 @@
                     th:text="${option.label}"></option>
         </select>
 
+        <label for="sheet-type">Type de fiche</label>
+        <select id="sheet-type" name="sheetType">
+            <option value="" selected>Type par défaut</option>
+            <option th:each="option : ${sheetTypes}"
+                    th:value="${option.value}"
+                    th:text="${option.label}"></option>
+        </select>
+
         <label for="sheet-theme">Thème</label>
         <input id="sheet-theme" type="text" name="theme" required maxlength="200">
 
