@@ -7,7 +7,7 @@ Application modulaire permettant la génération de fiches pour le brevet depuis
 ## Technique
 ### Stack technique
 - Java 25 ;
-- Spring Boot ;
+- Spring Boot 4.1.2 ;
 - Spring Modulith ;
 - Spring AI ;
 - Apache Tika pour l'extraction du texte provenant des fichiers de type pdf ou Word ;
