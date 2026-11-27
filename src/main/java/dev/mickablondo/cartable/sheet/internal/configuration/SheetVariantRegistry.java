@@ -15,8 +15,15 @@ import org.springframework.stereotype.Component;
 public class SheetVariantRegistry {
 
 	private static final String GENERIC_TYPE = "GENERIC";
+	private static final String HISTORY_GEOGRAPHY_TYPE = "HISTORY_GEOGRAPHY";
 	private static final SheetVariantDefinition GENERIC_VARIANT =
 		new SheetVariantDefinition(GENERIC_TYPE, "Fiche générique", 1, "classpath:prompts/sheet-generation-generic.st");
+	private static final SheetVariantDefinition HISTORY_GEOGRAPHY_VARIANT =
+		new SheetVariantDefinition(
+			HISTORY_GEOGRAPHY_TYPE,
+			"Fiche d'histoire-géographie",
+			1,
+			"classpath:prompts/sheet-generation-history-geography.st");
 
 	private final Map<SheetVariantKey, SheetVariantDefinition> variants;
 
@@ -25,6 +32,9 @@ public class SheetVariantRegistry {
 		for (Subject subject : Subject.values()) {
 			configured.put(new SheetVariantKey(subject, GENERIC_TYPE), GENERIC_VARIANT);
 		}
+		configured.put(
+			new SheetVariantKey(Subject.HISTORY_GEOGRAPHY, HISTORY_GEOGRAPHY_TYPE),
+			HISTORY_GEOGRAPHY_VARIANT);
 		this.variants = Map.copyOf(configured);
 	}
 

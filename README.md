@@ -133,3 +133,9 @@ docker compose exec ollama ollama pull bge-m3
 - Le registre associe les couples matière/type disponibles. Chaque variante dispose d'un prompt distinct et partage les consignes communes sans les recopier.
 - Les colonnes communes restent relationnelles ; le contenu propre à la variante est stocké dans `variant_data` en JSONB avec `schema_version`. La migration V12 copie le contenu générique historique dans ce JSON et conserve les colonnes `definitions` et `landmarks`.
 - Un type, une version ou un contenu JSON non pris en charge est présenté en mode dégradé avec un message, sans empêcher la lecture des données communes.
+
+#### v3.2 — Fiches d'histoire-géographie
+- La variante `HISTORY_GEOGRAPHY` propose une chronologie, des personnages, des notions à définir et des repères spatiaux, en plus des notions clés et du complément général commun.
+- Son prompt dédié réserve la partie issue du cours aux passages fournis et demande de recopier exactement les dates et noms propres. Le code refuse une date de chronologie absente de tous les passages cités et trie lui-même les événements.
+- Le contenu spécialisé est conservé dans `variant_data` sans modifier les migrations déjà appliquées. La fiche web et son export Markdown affichent la chronologie, les citations et les autres éléments spécialisés.
+- Les tests utilisent un faux `ChatClient`, y compris pour vérifier le refus d'une date absente ; aucun modèle réel n'est appelé automatiquement.

@@ -9,6 +9,10 @@ import java.util.stream.Collectors;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.GenericSheet;
+import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
+import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
+import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
+import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
@@ -62,6 +66,10 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 
 	private static void appendCourseContent(
 			StringBuilder markdown, Sheet sheet, Map<String, SheetSource> sources) {
+		if (sheet instanceof HistoryGeographySheet historyGeographySheet) {
+			appendHistoryGeographyContent(markdown, historyGeographySheet, sources);
+			return;
+		}
 		List<SheetDefinition> definitions = sheet instanceof GenericSheet genericSheet
 			? genericSheet.definitions()
 			: List.of();
@@ -75,6 +83,61 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 		appendStatements(markdown, "### Notions clés", sheet.keyConcepts(), sources);
 		appendDefinitions(markdown, definitions, sources);
 		appendStatements(markdown, "### Repères", landmarks, sources);
+	}
+
+	private static void appendHistoryGeographyContent(
+			StringBuilder markdown, HistoryGeographySheet sheet, Map<String, SheetSource> sources) {
+		if (sheet.keyConcepts().isEmpty() && sheet.chronology().isEmpty() && sheet.characters().isEmpty()
+				&& sheet.definitions().isEmpty() && sheet.spatialLandmarks().isEmpty()) {
+			return;
+		}
+		markdown.append("## Contenu issu du cours et du référentiel — avec sources\n\n");
+		appendStatements(markdown, "### Notions clés", sheet.keyConcepts(), sources);
+		appendChronology(markdown, sheet.chronology(), sources);
+		appendCharacters(markdown, sheet.characters(), sources);
+		appendDefinitions(markdown, "### Notions à définir", sheet.definitions(), sources);
+		appendSpatialLandmarks(markdown, sheet.spatialLandmarks(), sources);
+	}
+
+	private static void appendChronology(
+			StringBuilder markdown, List<HistoryGeographyEvent> events, Map<String, SheetSource> sources) {
+		if (events.isEmpty()) {
+			return;
+		}
+		markdown.append("### Chronologie\n\n");
+		for (HistoryGeographyEvent event : events) {
+			markdown.append("- **").append(requiredText(event.date())).append("** — ")
+				.append(requiredText(event.event())).append(" ")
+				.append(citations(event.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
+	}
+
+	private static void appendCharacters(
+			StringBuilder markdown, List<HistoryGeographyCharacter> characters, Map<String, SheetSource> sources) {
+		if (characters.isEmpty()) {
+			return;
+		}
+		markdown.append("### Personnages\n\n");
+		for (HistoryGeographyCharacter character : characters) {
+			markdown.append("- **").append(requiredText(character.name())).append("** — ")
+				.append(requiredText(character.role())).append(" ")
+				.append(citations(character.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
+	}
+
+	private static void appendSpatialLandmarks(
+			StringBuilder markdown, List<HistoryGeographyLandmark> landmarks, Map<String, SheetSource> sources) {
+		if (landmarks.isEmpty()) {
+			return;
+		}
+		markdown.append("### Repères spatiaux\n\n");
+		for (HistoryGeographyLandmark landmark : landmarks) {
+			markdown.append("- ").append(requiredText(landmark.place())).append(" ")
+				.append(citations(landmark.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
 	}
 
 	private static void appendGeneralKnowledge(StringBuilder markdown, List<SheetGeneralKnowledge> items) {
@@ -112,10 +175,18 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 			StringBuilder markdown,
 			List<SheetDefinition> definitions,
 			Map<String, SheetSource> sources) {
+		appendDefinitions(markdown, "### Définitions", definitions, sources);
+	}
+
+	private static void appendDefinitions(
+			StringBuilder markdown,
+			String heading,
+			List<SheetDefinition> definitions,
+			Map<String, SheetSource> sources) {
 		if (definitions.isEmpty()) {
 			return;
 		}
-		markdown.append("### Définitions\n\n");
+		markdown.append(heading).append("\n\n");
 		for (SheetDefinition definition : definitions) {
 			markdown.append("- **").append(requiredText(definition.term())).append("** — ")
 				.append(requiredText(definition.definition())).append(" ")

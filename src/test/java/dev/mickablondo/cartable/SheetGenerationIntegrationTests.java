@@ -9,6 +9,10 @@ import java.util.stream.Stream;
 import java.nio.charset.StandardCharsets;
 
 import dev.mickablondo.cartable.course.Subject;
+import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
+import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
+import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
+import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
@@ -23,6 +27,8 @@ import dev.mickablondo.cartable.sheet.SheetVerificationService;
 import dev.mickablondo.cartable.sheet.SheetVerified;
 import dev.mickablondo.cartable.sheet.UnavailableSheet;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
+import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographyCourseContent;
+import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographySheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -99,6 +105,9 @@ class SheetGenerationIntegrationTests {
 	@Value("classpath:prompts/sheet-generation-generic.st")
 	private Resource genericPrompt;
 
+	@Value("classpath:prompts/sheet-generation-history-geography.st")
+	private Resource historyGeographyPrompt;
+
 	@BeforeEach
 	void setUp() {
 		jdbcTemplate.update("DELETE FROM sheet");
@@ -125,6 +134,16 @@ class SheetGenerationIntegrationTests {
 					"sourceFile", "programme.pdf",
 					"chapter", "Objets techniques",
 					"publicationDate", "2025-09-01"))
+				.build(),
+			Document.builder()
+				.text("La Première Guerre mondiale commence en 1914. La Seconde Guerre mondiale débute en 1939. "
+					+ "Charles de Gaulle dirige la France libre. Paris est la capitale de la France.")
+				.metadata(Map.of(
+					"origin", "COURSE",
+					"subject", Subject.HISTORY_GEOGRAPHY.name(),
+					"level", "3ème",
+					"chapter", "Chapitre 1 - Guerres mondiales",
+					"sourceFile", "histoire.docx"))
 				.build()));
 	}
 
@@ -224,6 +243,70 @@ class SheetGenerationIntegrationTests {
 		assertThrows(IllegalStateException.class,
 			() -> sheetGenerationService.generate("Objets techniques", Subject.TECHNOLOGY));
 		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
+	}
+
+	@Test
+	void generatesHistoryGeographySheetWithValidatedCitationsAndCodeSortedChronology() throws Exception {
+		fixHistoryGeographyChatClientResponse(validHistoryGeographyDraft());
+
+		HistoryGeographySheet sheet = (HistoryGeographySheet) sheetGenerationService.generate(
+			"Guerres mondiales", Subject.HISTORY_GEOGRAPHY, "HISTORY_GEOGRAPHY");
+
+		assertEquals(List.of("1914", "1939"), sheet.chronology().stream()
+			.map(HistoryGeographyEvent::date)
+			.toList());
+		assertEquals("Charles de Gaulle", sheet.characters().getFirst().name());
+		assertEquals("Paris", sheet.spatialLandmarks().getFirst().place());
+		assertEquals("TO_VERIFY", sheet.status().name());
+		assertEquals("HISTORY_GEOGRAPHY", sheet.sheetType());
+		assertTrue(suppliedPrompts.getFirst().contains("Recopie chaque date exactement"));
+		assertTrue(suppliedPrompts.getFirst().contains("Recopie chaque nom propre exactement"));
+
+		Map<String, Object> stored = jdbcTemplate.queryForMap("""
+			SELECT sheet_type, schema_version,
+			       variant_data -> 'chronology' -> 0 ->> 'date' AS first_date,
+			       variant_data -> 'characters' -> 0 ->> 'name' AS first_character,
+			       variant_data -> 'spatialLandmarks' -> 0 ->> 'place' AS first_place
+			FROM sheet
+			WHERE id = ?
+			""", sheet.id());
+		assertEquals("HISTORY_GEOGRAPHY", stored.get("sheet_type"));
+		assertEquals(1, stored.get("schema_version"));
+		assertEquals("1914", stored.get("first_date"));
+		assertEquals("Charles de Gaulle", stored.get("first_character"));
+		assertEquals("Paris", stored.get("first_place"));
+
+		String markdown = sheetMarkdownExportService.exportMarkdown(sheet.id());
+		assertTrue(markdown.contains("### Chronologie"));
+		assertTrue(markdown.contains("- **1914** — Début de la Première Guerre mondiale. [C1]"));
+		assertTrue(markdown.indexOf("**1914**") < markdown.indexOf("**1939**"));
+		assertTrue(markdown.contains("### Personnages"));
+		assertTrue(markdown.contains("Charles de Gaulle"));
+		assertTrue(markdown.contains("### Notions à définir"));
+		assertTrue(markdown.contains("### Repères spatiaux"));
+		assertTrue(markdown.contains("Complément de connaissances générales — à vérifier"));
+		assertTrue(markdown.contains("histoire.docx"));
+	}
+
+	@Test
+	void refusesHistoryGeographyEventWhenDateIsAbsentFromCitedPassages() {
+		HistoryGeographySheetDraft draft = validHistoryGeographyDraft();
+		HistoryGeographyCourseContent content = new HistoryGeographyCourseContent(
+			draft.courseContent().keyConcepts(),
+			List.of(new HistoryGeographyEvent("1945", "Fin de la guerre.", List.of("C1"))),
+			draft.courseContent().characters(),
+			draft.courseContent().definitions(),
+			draft.courseContent().spatialLandmarks());
+		fixHistoryGeographyChatClientResponse(new HistoryGeographySheetDraft(
+			draft.theme(), content, draft.generalKnowledge(), draft.limitations()));
+
+		IllegalStateException exception = assertThrows(IllegalStateException.class,
+			() -> sheetGenerationService.generate(
+				"Guerres mondiales", Subject.HISTORY_GEOGRAPHY, "HISTORY_GEOGRAPHY"));
+
+		assertTrue(exception.getMessage().contains("la date « 1945 »"));
+		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
+		assertEquals(0, applicationEvents.stream(SheetGenerated.class).count());
 	}
 
 	@Test
@@ -393,6 +476,22 @@ class SheetGenerationIntegrationTests {
 			List.of("Le cours ne précise pas davantage ce thème."));
 	}
 
+	private static HistoryGeographySheetDraft validHistoryGeographyDraft() {
+		return new HistoryGeographySheetDraft(
+			"Guerres mondiales",
+			new HistoryGeographyCourseContent(
+				List.of(new SheetStatement("Les deux guerres mondiales ont marqué le XXe siècle.", List.of("C1"))),
+				List.of(
+					new HistoryGeographyEvent("1939", "Début de la Seconde Guerre mondiale.", List.of("C1")),
+					new HistoryGeographyEvent("1914", "Début de la Première Guerre mondiale.", List.of("C1"))),
+				List.of(new HistoryGeographyCharacter(
+					"Charles de Gaulle", "Dirige la France libre.", List.of("C1"))),
+				List.of(new SheetDefinition("France libre", "Organisation dirigée depuis l'extérieur.", List.of("C1"))),
+				List.of(new HistoryGeographyLandmark("Paris", List.of("C1")))),
+			List.of(new SheetGeneralKnowledgeDraft("Un repère complémentaire — à vérifier.", List.of())),
+			List.of());
+	}
+
 	private void fixChatClientResponse(SheetDraft response) {
 		ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
 		ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
@@ -411,6 +510,26 @@ class SheetGenerationIntegrationTests {
 			org.mockito.ArgumentMatchers.<Consumer<PromptSystemSpec>>any());
 		when(request.call()).thenReturn(call);
 		when(call.entity(SheetDraft.class)).thenReturn(response);
+	}
+
+	private void fixHistoryGeographyChatClientResponse(HistoryGeographySheetDraft response) {
+		ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+		ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
+		PromptSystemSpec systemSpec = mock(PromptSystemSpec.class);
+		doAnswer(invocation -> {
+			suppliedPrompts.add(invocation.getArgument(0, String.class));
+			return systemSpec;
+		}).when(systemSpec).text(anyString());
+		when(systemSpec.param(anyString(), any())).thenReturn(systemSpec);
+		when(chatClient.prompt()).thenReturn(request);
+		doAnswer(invocation -> {
+			Consumer<PromptSystemSpec> system = invocation.getArgument(0);
+			system.accept(systemSpec);
+			return request;
+		}).when(request).system(
+			org.mockito.ArgumentMatchers.<Consumer<PromptSystemSpec>>any());
+		when(request.call()).thenReturn(call);
+		when(call.entity(HistoryGeographySheetDraft.class)).thenReturn(response);
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)

@@ -15,8 +15,12 @@ import dev.mickablondo.cartable.course.CourseQueryService;
 import dev.mickablondo.cartable.course.CourseReviewService;
 import dev.mickablondo.cartable.course.CourseStatus;
 import dev.mickablondo.cartable.course.Subject;
-import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.GenericSheet;
+import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
+import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
+import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
+import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
+import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
@@ -266,6 +270,41 @@ class CourseAndSheetControllerTests {
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("2025-09-01")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Valider")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Exporter en Markdown")));
+	}
+
+	@Test
+	void displaysHistoryGeographyContent() throws Exception {
+		SheetSource source = new SheetSource(
+			"C1", "COURSE", "histoire.docx", "Chapitre 1", null, null, null);
+		Sheet sheet = new HistoryGeographySheet(
+			UUID.randomUUID(),
+			Subject.HISTORY_GEOGRAPHY,
+			"Guerres mondiales",
+			"HISTORY_GEOGRAPHY",
+			1,
+			List.of(),
+			List.of(
+				new HistoryGeographyEvent("1939", "Début de la Seconde Guerre mondiale.", List.of("C1")),
+				new HistoryGeographyEvent("1914", "Début de la Première Guerre mondiale.", List.of("C1"))),
+			List.of(new HistoryGeographyCharacter("Charles de Gaulle", "Dirige la France libre.", List.of("C1"))),
+			List.of(new SheetDefinition("France libre", "Organisation dirigée depuis l'extérieur.", List.of("C1"))),
+			List.of(new HistoryGeographyLandmark("Paris", List.of("C1"))),
+			List.of(),
+			List.of(),
+			List.of(source),
+			SheetStatus.TO_VERIFY,
+			Instant.parse("2026-11-15T10:00:00Z"));
+		when(sheetQueryService.findById(sheet.id())).thenReturn(Optional.of(sheet));
+
+		mockMvc.perform(get("/sheets/{id}", sheet.id()))
+			.andExpect(status().isOk())
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Chronologie")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("1914")))
+			.andExpect(content().string(org.hamcrest.Matchers.stringContainsInOrder("1914", "1939")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Charles de Gaulle")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Notions à définir")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Repères spatiaux")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("[C1]")));
 	}
 
 	@Test

@@ -15,6 +15,10 @@ import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.reference.ReferencePassage;
 import dev.mickablondo.cartable.reference.ReferenceSearchService;
 import dev.mickablondo.cartable.sheet.GenericSheet;
+import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
+import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
+import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
+import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
@@ -29,6 +33,9 @@ import dev.mickablondo.cartable.sheet.SheetTypeOption;
 import dev.mickablondo.cartable.sheet.internal.configuration.SheetVariantDefinition;
 import dev.mickablondo.cartable.sheet.internal.configuration.SheetVariantRegistry;
 import dev.mickablondo.cartable.sheet.internal.model.GenericSheetContent;
+import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographyCourseContent;
+import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographySheetContent;
+import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographySheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.springframework.ai.chat.client.ChatClient;
@@ -103,11 +110,16 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		}
 		List<ReferencePassage> referencePassages = referenceSearchService.search(theme, subject);
 		Map<String, SheetSource> sourceCatalog = new LinkedHashMap<>();
+		Map<String, String> sourcePassages = new LinkedHashMap<>();
 		List<String> context = new ArrayList<>();
-		addCoursePassages(coursePassages, sourceCatalog, context, subject);
-		addReferencePassages(referencePassages, sourceCatalog, context, subject);
+		addCoursePassages(coursePassages, sourceCatalog, sourcePassages, context, subject);
+		addReferencePassages(referencePassages, sourceCatalog, sourcePassages, context, subject);
 
 		String prompt = readPrompt(commonPrompt) + "\n\n" + readPrompt(resourceLoader.getResource(variant.promptResource()));
+		if ("HISTORY_GEOGRAPHY".equals(variant.sheetType())) {
+			return generateHistoryGeography(
+				theme, subject, variant, prompt, sourceCatalog, sourcePassages, context);
+		}
 		SheetDraft draft = chatClient.prompt()
 			.system(system -> system.text(prompt)
 				.param("subject", subjectLabel(subject))
@@ -149,6 +161,7 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 	private static void addCoursePassages(
 			List<CoursePassage> passages,
 			Map<String, SheetSource> sourceCatalog,
+			Map<String, String> sourcePassages,
 			List<String> context,
 			Subject subject) {
 		for (int index = 0; index < passages.size(); index++) {
@@ -156,6 +169,7 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 			String id = "C" + (index + 1);
 			sourceCatalog.put(id, new SheetSource(
 				id, "COURSE", passage.sourceFile(), passage.chapter(), null, null, null));
+			sourcePassages.put(id, passage.text());
 			context.add("""
 				[%s] Origine : cours ; matière : %s ; chapitre : %s ; fichier : %s
 				Texte : %s
@@ -166,6 +180,7 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 	private static void addReferencePassages(
 			List<ReferencePassage> passages,
 			Map<String, SheetSource> sourceCatalog,
+			Map<String, String> sourcePassages,
 			List<String> context,
 			Subject subject) {
 		for (int index = 0; index < passages.size(); index++) {
@@ -179,6 +194,7 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 				passage.title(),
 				passage.sourceUrl(),
 				passage.publicationDate()));
+			sourcePassages.put(id, passage.text());
 			context.add("""
 				[%s] Origine : référentiel officiel ; matière : %s ; titre : %s ; chapitre : %s ;
 				fichier : %s ; URL : %s ; date de publication : %s
@@ -201,6 +217,97 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		addCitations(courseContent.keyConcepts(), sourceCatalog, citedSources);
 		addDefinitionCitations(courseContent.definitions(), sourceCatalog, citedSources);
 		addCitations(courseContent.landmarks(), sourceCatalog, citedSources);
+		if (citedSources.isEmpty()) {
+			throw new IllegalStateException("La fiche est refusée : elle ne cite aucune source.");
+		}
+		return List.copyOf(citedSources.values());
+	}
+
+	private Sheet generateHistoryGeography(
+			String theme,
+			Subject subject,
+			SheetVariantDefinition variant,
+			String prompt,
+			Map<String, SheetSource> sourceCatalog,
+			Map<String, String> sourcePassages,
+			List<String> context) {
+		HistoryGeographySheetDraft draft = chatClient.prompt()
+			.system(system -> system.text(prompt)
+				.param("subject", subjectLabel(subject))
+				.param("theme", theme.strip())
+				.param("passages", String.join("\n\n", context)))
+			.call()
+			.entity(HistoryGeographySheetDraft.class);
+		if (draft == null) {
+			throw new IllegalStateException("Le modèle n'a retourné aucun contenu structuré pour la fiche.");
+		}
+
+		HistoryGeographyCourseContent courseContent = requiredValue(
+			draft.courseContent(), "Le contenu issu des sources est absent.");
+		List<SheetSource> citedSources = validateAndResolveHistoryGeographySources(
+			courseContent, sourceCatalog, sourcePassages);
+		List<SheetGeneralKnowledge> generalKnowledge = validateGeneralKnowledge(draft.generalKnowledge());
+		Instant generatedAt = Instant.now();
+		HistoryGeographySheet sheet = new HistoryGeographySheet(
+			UUID.randomUUID(),
+			subject,
+			requiredText(draft.theme(), "Le thème généré est vide."),
+			variant.sheetType(),
+			variant.schemaVersion(),
+			requiredList(courseContent.keyConcepts(), "Les notions clés sont absentes."),
+			requiredList(courseContent.chronology(), "La chronologie est absente."),
+			requiredList(courseContent.characters(), "Les personnages sont absents."),
+			requiredList(courseContent.definitions(), "Les notions à définir sont absentes."),
+			requiredList(courseContent.spatialLandmarks(), "Les repères spatiaux sont absents."),
+			generalKnowledge,
+			requiredList(draft.limitations(), "Les limites sont absentes."),
+			citedSources,
+			dev.mickablondo.cartable.sheet.SheetStatus.TO_VERIFY,
+			generatedAt);
+		HistoryGeographySheetContent variantContent = new HistoryGeographySheetContent(
+			sheet.chronology(),
+			sheet.characters(),
+			sheet.definitions(),
+			sheet.spatialLandmarks());
+
+		save(sheet, variantContent);
+		events.publishEvent(new SheetGenerated(sheet.id(), sheet.subject(), sheet.theme(), sheet.generatedAt()));
+		return sheet;
+	}
+
+	private static List<SheetSource> validateAndResolveHistoryGeographySources(
+			HistoryGeographyCourseContent courseContent,
+			Map<String, SheetSource> sourceCatalog,
+			Map<String, String> sourcePassages) {
+		Map<String, SheetSource> citedSources = new LinkedHashMap<>();
+		addCitations(courseContent.keyConcepts(), sourceCatalog, citedSources);
+		addDefinitionCitations(courseContent.definitions(), sourceCatalog, citedSources);
+
+		for (HistoryGeographyEvent event : requiredList(
+				courseContent.chronology(), "La chronologie est absente.")) {
+			String date = requiredText(event.date(), "Une date de la chronologie est vide.");
+			requiredText(event.event(), "Un événement de la chronologie est vide.");
+			addCitationIds(event.sourceIds(), sourceCatalog, citedSources);
+			boolean dateIsCited = event.sourceIds().stream()
+				.map(sourcePassages::get)
+				.filter(java.util.Objects::nonNull)
+				.anyMatch(passage -> passage.contains(date));
+			if (!dateIsCited) {
+				throw new IllegalStateException(
+					"La fiche est refusée : la date « " + date + " » n'apparaît dans aucun des passages cités.");
+			}
+		}
+		for (HistoryGeographyCharacter character : requiredList(
+				courseContent.characters(), "Les personnages sont absents.")) {
+			requiredText(character.name(), "Un nom de personnage est vide.");
+			requiredText(character.role(), "Le rôle d'un personnage est vide.");
+			addCitationIds(character.sourceIds(), sourceCatalog, citedSources);
+		}
+		for (HistoryGeographyLandmark landmark : requiredList(
+				courseContent.spatialLandmarks(), "Les repères spatiaux sont absents.")) {
+			requiredText(landmark.place(), "Un lieu est vide.");
+			addCitationIds(landmark.sourceIds(), sourceCatalog, citedSources);
+		}
 		if (citedSources.isEmpty()) {
 			throw new IllegalStateException("La fiche est refusée : elle ne cite aucune source.");
 		}
@@ -260,7 +367,13 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		}
 	}
 
-	private void save(Sheet sheet, GenericSheetContent variantContent) {
+	private void save(Sheet sheet, Object variantContent) {
+		List<SheetDefinition> legacyDefinitions = variantContent instanceof GenericSheetContent genericContent
+			? genericContent.definitions()
+			: List.of();
+		List<SheetStatement> legacyLandmarks = variantContent instanceof GenericSheetContent genericContent
+			? genericContent.landmarks()
+			: List.of();
 		try {
 			int updatedRows = jdbcTemplate.update("""
 				INSERT INTO sheet
@@ -276,8 +389,8 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 				sheet.schemaVersion(),
 				jsonMapper.writeValueAsString(variantContent),
 				jsonMapper.writeValueAsString(sheet.keyConcepts()),
-				jsonMapper.writeValueAsString(variantContent.definitions()),
-				jsonMapper.writeValueAsString(variantContent.landmarks()),
+				jsonMapper.writeValueAsString(legacyDefinitions),
+				jsonMapper.writeValueAsString(legacyLandmarks),
 				jsonMapper.writeValueAsString(sheet.generalKnowledge()),
 				jsonMapper.writeValueAsString(sheet.limitations()),
 				jsonMapper.writeValueAsString(sheet.sources()),
