@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.GenericSheet;
+import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
@@ -90,6 +91,8 @@ class SheetController {
 		Sheet sheet = findSheet(sheetId);
 		model.addAttribute("sheet", sheet);
 		model.addAttribute("genericSheet", sheet instanceof GenericSheet genericSheet ? genericSheet : null);
+		model.addAttribute("historyGeographySheet",
+			sheet instanceof HistoryGeographySheet historyGeographySheet ? historyGeographySheet : null);
 		model.addAttribute("subjectLabel", SubjectOptions.label(sheet.subject()));
 		model.addAttribute("needsVerification", sheet.status() == SheetStatus.TO_VERIFY);
 		return "sheet-detail";

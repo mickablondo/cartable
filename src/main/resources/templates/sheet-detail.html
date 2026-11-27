@@ -16,7 +16,7 @@
         Cette fiche n’a pas encore été vérifiée. Vérifiez son contenu avant de l’utiliser.
     </p>
 
-    <section th:if="${!#lists.isEmpty(sheet.keyConcepts) or (genericSheet != null and (!#lists.isEmpty(genericSheet.definitions) or !#lists.isEmpty(genericSheet.landmarks)))}">
+    <section th:if="${!#lists.isEmpty(sheet.keyConcepts) or (genericSheet != null and (!#lists.isEmpty(genericSheet.definitions) or !#lists.isEmpty(genericSheet.landmarks))) or (historyGeographySheet != null and (!#lists.isEmpty(historyGeographySheet.chronology) or !#lists.isEmpty(historyGeographySheet.characters) or !#lists.isEmpty(historyGeographySheet.definitions) or !#lists.isEmpty(historyGeographySheet.spatialLandmarks)))}">
         <h2>Contenu issu du cours et du référentiel — avec sources</h2>
         <div th:if="${!#lists.isEmpty(sheet.keyConcepts)}">
             <h3>Notions clés</h3>
@@ -44,6 +44,49 @@
             <ul>
             <li th:each="landmark : ${genericSheet.landmarks}">
                 <span th:text="${landmark.text}"></span>
+                <span th:each="sourceId : ${landmark.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${historyGeographySheet != null and !#lists.isEmpty(historyGeographySheet.chronology)}">
+            <h3>Chronologie</h3>
+            <ol>
+            <li th:each="event : ${historyGeographySheet.chronology}">
+                <strong th:text="${event.date}"></strong> —
+                <span th:text="${event.event}"></span>
+                <span th:each="sourceId : ${event.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ol>
+        </div>
+
+        <div th:if="${historyGeographySheet != null and !#lists.isEmpty(historyGeographySheet.characters)}">
+            <h3>Personnages</h3>
+            <ul>
+            <li th:each="character : ${historyGeographySheet.characters}">
+                <strong th:text="${character.name}"></strong> —
+                <span th:text="${character.role}"></span>
+                <span th:each="sourceId : ${character.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${historyGeographySheet != null and !#lists.isEmpty(historyGeographySheet.definitions)}">
+            <h3>Notions à définir</h3>
+            <ul>
+            <li th:each="definition : ${historyGeographySheet.definitions}">
+                <strong th:text="${definition.term}"></strong> —
+                <span th:text="${definition.definition}"></span>
+                <span th:each="sourceId : ${definition.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${historyGeographySheet != null and !#lists.isEmpty(historyGeographySheet.spatialLandmarks)}">
+            <h3>Repères spatiaux</h3>
+            <ul>
+            <li th:each="landmark : ${historyGeographySheet.spatialLandmarks}">
+                <span th:text="${landmark.place}"></span>
                 <span th:each="sourceId : ${landmark.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
             </li>
             </ul>
