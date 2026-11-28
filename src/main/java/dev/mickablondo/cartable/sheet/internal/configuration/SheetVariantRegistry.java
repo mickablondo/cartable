@@ -16,6 +16,7 @@ public class SheetVariantRegistry {
 
 	private static final String GENERIC_TYPE = "GENERIC";
 	private static final String HISTORY_GEOGRAPHY_TYPE = "HISTORY_GEOGRAPHY";
+	private static final String MATH_TYPE = "MATH";
 	private static final SheetVariantDefinition GENERIC_VARIANT =
 		new SheetVariantDefinition(GENERIC_TYPE, "Fiche générique", 1, "classpath:prompts/sheet-generation-generic.st");
 	private static final SheetVariantDefinition HISTORY_GEOGRAPHY_VARIANT =
@@ -24,6 +25,8 @@ public class SheetVariantRegistry {
 			"Fiche d'histoire-géographie",
 			1,
 			"classpath:prompts/sheet-generation-history-geography.st");
+	private static final SheetVariantDefinition MATH_VARIANT =
+		new SheetVariantDefinition(MATH_TYPE, "Fiche de mathématiques", 1, "classpath:prompts/sheet-generation-math.st");
 
 	private final Map<SheetVariantKey, SheetVariantDefinition> variants;
 
@@ -35,6 +38,7 @@ public class SheetVariantRegistry {
 		configured.put(
 			new SheetVariantKey(Subject.HISTORY_GEOGRAPHY, HISTORY_GEOGRAPHY_TYPE),
 			HISTORY_GEOGRAPHY_VARIANT);
+		configured.put(new SheetVariantKey(Subject.MATHEMATICS, MATH_TYPE), MATH_VARIANT);
 		this.variants = Map.copyOf(configured);
 	}
 

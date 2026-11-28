@@ -139,3 +139,9 @@ docker compose exec ollama ollama pull bge-m3
 - Son prompt dédié réserve la partie issue du cours aux passages fournis et demande de recopier exactement les dates et noms propres. Le code refuse une date de chronologie absente de tous les passages cités et trie lui-même les événements.
 - Le contenu spécialisé est conservé dans `variant_data` sans modifier les migrations déjà appliquées. La fiche web et son export Markdown affichent la chronologie, les citations et les autres éléments spécialisés.
 - Les tests utilisent un faux `ChatClient`, y compris pour vérifier le refus d'une date absente ; aucun modèle réel n'est appelé automatiquement.
+
+#### v3.3 — Fiches de mathématiques
+- La variante `MATH` propose les définitions, propriétés, théorèmes, formules, méthodes par étapes, erreurs fréquentes et exemples, en plus du contenu commun. Les énoncés et exemples du cours restent rattachés à leurs passages.
+- Le prompt dédié interdit les exemples numériques inventés et demande les formules en LaTeX. Le code refuse les formules sans source et les exemples qui ne sont pas recopiés exactement d'un passage de cours.
+- Le marqueur `[formule à vérifier]` d'une transcription d'image est conservé dans le statut de vérification des formules citées et propagé aux points à compléter. Le navigateur affiche actuellement le LaTeX brut ; l'ajout d'une bibliothèque de rendu nécessite une décision explicite.
+- Le contenu spécialisé est stocké dans `variant_data` sans modifier les migrations existantes. Les tests utilisent un faux `ChatClient` et couvrent les formules sans source et les exemples non présents dans le cours.

@@ -13,6 +13,13 @@ import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
 import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
 import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
 import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
+import dev.mickablondo.cartable.sheet.MathCommonError;
+import dev.mickablondo.cartable.sheet.MathExample;
+import dev.mickablondo.cartable.sheet.MathFormula;
+import dev.mickablondo.cartable.sheet.MathMethod;
+import dev.mickablondo.cartable.sheet.MathProperty;
+import dev.mickablondo.cartable.sheet.MathSheet;
+import dev.mickablondo.cartable.sheet.MathTheorem;
 import dev.mickablondo.cartable.sheet.SheetDefinition;
 import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
 import dev.mickablondo.cartable.sheet.SheetMarkdownExportService;
@@ -66,7 +73,11 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 
 	private static void appendCourseContent(
 			StringBuilder markdown, Sheet sheet, Map<String, SheetSource> sources) {
-		if (sheet instanceof HistoryGeographySheet historyGeographySheet) {
+			if (sheet instanceof MathSheet mathSheet) {
+				appendMathContent(markdown, mathSheet, sources);
+				return;
+			}
+			if (sheet instanceof HistoryGeographySheet historyGeographySheet) {
 			appendHistoryGeographyContent(markdown, historyGeographySheet, sources);
 			return;
 		}
@@ -97,6 +108,114 @@ class SheetMarkdownExportServiceImpl implements SheetMarkdownExportService {
 		appendCharacters(markdown, sheet.characters(), sources);
 		appendDefinitions(markdown, "### Notions à définir", sheet.definitions(), sources);
 		appendSpatialLandmarks(markdown, sheet.spatialLandmarks(), sources);
+	}
+
+	private static void appendMathContent(StringBuilder markdown, MathSheet sheet, Map<String, SheetSource> sources) {
+		if (sheet.keyConcepts().isEmpty() && sheet.definitions().isEmpty() && sheet.properties().isEmpty()
+				&& sheet.theorems().isEmpty() && sheet.formulas().isEmpty() && sheet.methods().isEmpty()
+				&& sheet.commonErrors().isEmpty() && sheet.examples().isEmpty()) {
+			return;
+		}
+		markdown.append("## Contenu issu du cours et du référentiel — avec sources\n\n");
+		appendStatements(markdown, "### Notions clés", sheet.keyConcepts(), sources);
+		appendDefinitions(markdown, sheet.definitions(), sources);
+		appendMathProperties(markdown, sheet.properties(), sources);
+		appendMathTheorems(markdown, sheet.theorems(), sources);
+		appendMathFormulas(markdown, sheet.formulas(), sources);
+		appendMathMethods(markdown, sheet.methods(), sources);
+		appendMathErrors(markdown, sheet.commonErrors(), sources);
+		appendMathExamples(markdown, sheet.examples(), sources);
+	}
+
+	private static void appendMathProperties(
+			StringBuilder markdown, List<MathProperty> properties, Map<String, SheetSource> sources) {
+		if (properties.isEmpty()) {
+			return;
+		}
+		markdown.append("### Propriétés\n\n");
+		for (MathProperty property : properties) {
+			markdown.append("- **").append(requiredText(property.name())).append("** — ")
+				.append(requiredText(property.statement())).append(" ")
+				.append(citations(property.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
+	}
+
+	private static void appendMathTheorems(
+			StringBuilder markdown, List<MathTheorem> theorems, Map<String, SheetSource> sources) {
+		if (theorems.isEmpty()) {
+			return;
+		}
+		markdown.append("### Théorèmes\n\n");
+		for (MathTheorem theorem : theorems) {
+			markdown.append("- **").append(requiredText(theorem.name())).append("** — ")
+				.append(requiredText(theorem.statement())).append(" ")
+				.append(citations(theorem.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
+	}
+
+	private static void appendMathFormulas(
+			StringBuilder markdown, List<MathFormula> formulas, Map<String, SheetSource> sources) {
+		if (formulas.isEmpty()) {
+			return;
+		}
+		markdown.append("### Formules\n\n");
+		for (MathFormula formula : formulas) {
+			String latex = formula.latex();
+			requiredText(latex);
+			markdown.append("- **").append(requiredText(formula.name())).append("** : ")
+				.append(latex);
+			if (formula.requiresVerification()) {
+				markdown.append(" [formule à vérifier]");
+			}
+			markdown.append(" — ").append(requiredText(formula.explanation())).append(" ")
+				.append(citations(formula.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
+	}
+
+	private static void appendMathMethods(
+			StringBuilder markdown, List<MathMethod> methods, Map<String, SheetSource> sources) {
+		if (methods.isEmpty()) {
+			return;
+		}
+		markdown.append("### Méthodes\n\n");
+		for (MathMethod method : methods) {
+			markdown.append("**").append(requiredText(method.name())).append("** ")
+				.append(citations(method.sourceIds(), sources)).append("\n\n");
+			for (int index = 0; index < method.steps().size(); index++) {
+				markdown.append(index + 1).append(". ").append(requiredText(method.steps().get(index))).append('\n');
+			}
+			markdown.append('\n');
+		}
+	}
+
+	private static void appendMathErrors(
+			StringBuilder markdown, List<MathCommonError> errors, Map<String, SheetSource> sources) {
+		if (errors.isEmpty()) {
+			return;
+		}
+		markdown.append("### Erreurs fréquentes\n\n");
+		for (MathCommonError error : errors) {
+			markdown.append("- **Erreur :** ").append(requiredText(error.error()))
+				.append(" **Correction :** ").append(requiredText(error.correction())).append(" ")
+				.append(citations(error.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
+	}
+
+	private static void appendMathExamples(
+			StringBuilder markdown, List<MathExample> examples, Map<String, SheetSource> sources) {
+		if (examples.isEmpty()) {
+			return;
+		}
+		markdown.append("### Exemples du cours\n\n");
+		for (MathExample example : examples) {
+			markdown.append("- ").append(requiredText(example.text())).append(" ")
+				.append(citations(example.sourceIds(), sources)).append('\n');
+		}
+		markdown.append('\n');
 	}
 
 	private static void appendChronology(

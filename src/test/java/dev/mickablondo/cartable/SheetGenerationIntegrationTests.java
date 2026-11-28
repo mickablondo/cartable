@@ -13,6 +13,13 @@ import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
 import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
 import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
 import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
+import dev.mickablondo.cartable.sheet.MathCommonError;
+import dev.mickablondo.cartable.sheet.MathExample;
+import dev.mickablondo.cartable.sheet.MathFormula;
+import dev.mickablondo.cartable.sheet.MathMethod;
+import dev.mickablondo.cartable.sheet.MathProperty;
+import dev.mickablondo.cartable.sheet.MathSheet;
+import dev.mickablondo.cartable.sheet.MathTheorem;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
@@ -29,6 +36,9 @@ import dev.mickablondo.cartable.sheet.UnavailableSheet;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographyCourseContent;
 import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographySheetDraft;
+import dev.mickablondo.cartable.sheet.internal.model.MathCourseContent;
+import dev.mickablondo.cartable.sheet.internal.model.MathFormulaDraft;
+import dev.mickablondo.cartable.sheet.internal.model.MathSheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -108,6 +118,9 @@ class SheetGenerationIntegrationTests {
 	@Value("classpath:prompts/sheet-generation-history-geography.st")
 	private Resource historyGeographyPrompt;
 
+	@Value("classpath:prompts/sheet-generation-math.st")
+	private Resource mathPrompt;
+
 	@BeforeEach
 	void setUp() {
 		jdbcTemplate.update("DELETE FROM sheet");
@@ -144,6 +157,21 @@ class SheetGenerationIntegrationTests {
 					"level", "3ème",
 					"chapter", "Chapitre 1 - Guerres mondiales",
 					"sourceFile", "histoire.docx"))
+				.build(),
+			Document.builder()
+				.text("Définition : une fonction linéaire est de la forme y=ax. "
+					+ "Propriété : l'image de 3 par la fonction est 6. "
+					+ "Théorème : si deux angles sont alternes-internes et les droites parallèles, alors ils sont égaux. "
+					+ "Formule à recopier [formule à vérifier] y=2x. "
+					+ "Exemple du cours : pour x=3, y=6. "
+					+ "Méthode : remplacer x par la valeur, puis calculer. "
+					+ "Erreur fréquente : oublier les parenthèses.")
+				.metadata(Map.of(
+					"origin", "COURSE",
+					"subject", Subject.MATHEMATICS.name(),
+					"level", "3ème",
+					"chapter", "Chapitre 2 - Fonctions",
+					"sourceFile", "maths.docx"))
 				.build()));
 	}
 
@@ -307,6 +335,99 @@ class SheetGenerationIntegrationTests {
 		assertTrue(exception.getMessage().contains("la date « 1945 »"));
 		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
 		assertEquals(0, applicationEvents.stream(SheetGenerated.class).count());
+	}
+
+	@Test
+	void generatesMathSheetAndPropagatesImageFormulaWarning() {
+		fixMathChatClientResponse(validMathDraft());
+
+		MathSheet sheet = (MathSheet) sheetGenerationService.generate(
+			"Fonctions linéaires", Subject.MATHEMATICS, "MATH");
+
+		assertEquals("MATH", sheet.sheetType());
+		assertTrue(sheet.formulas().getFirst().requiresVerification());
+		assertTrue(sheet.limitations().stream().anyMatch(value -> value.contains("[formule à vérifier]")));
+		assertTrue(suppliedPrompts.getFirst().contains("Écris chaque formule en LaTeX"));
+		assertTrue(suppliedPrompts.getFirst().contains("N'invente aucun exemple, nombre, calcul, résultat ni contexte"));
+
+		Map<String, Object> stored = jdbcTemplate.queryForMap("""
+			SELECT sheet_type, variant_data -> 'formulas' -> 0 ->> 'latex' AS formula,
+			       variant_data -> 'formulas' -> 0 ->> 'requiresVerification' AS requires_verification,
+			       variant_data -> 'examples' -> 0 ->> 'text' AS example,
+			       limitations -> 0 AS warning
+			FROM sheet
+			WHERE id = ?
+			""", sheet.id());
+		assertEquals("MATH", stored.get("sheet_type"));
+		assertEquals("\\(y=2x\\)", stored.get("formula"));
+		assertEquals("true", stored.get("requires_verification"));
+		assertEquals("Exemple du cours : pour x=3, y=6.", stored.get("example"));
+		assertTrue(stored.get("warning").toString().contains("[formule à vérifier]"));
+
+		String markdown = sheetMarkdownExportService.exportMarkdown(sheet.id());
+		assertTrue(markdown.contains("\\(y=2x\\) [formule à vérifier]"));
+		assertTrue(markdown.contains("Exemple du cours : pour x=3, y=6. [C1]"));
+		assertTrue(markdown.contains("### Méthodes"));
+		assertTrue(markdown.contains("### Théorèmes"));
+		assertTrue(markdown.contains("### Erreurs fréquentes"));
+	}
+
+	@Test
+	void refusesMathFormulaWithoutSource() {
+		MathSheetDraft draft = validMathDraft();
+		MathCourseContent content = new MathCourseContent(
+			draft.courseContent().keyConcepts(),
+			draft.courseContent().definitions(),
+			draft.courseContent().properties(),
+			draft.courseContent().theorems(),
+			List.of(new MathFormulaDraft("Fonction linéaire", "\\(y=2x\\)", "Relation.", List.of())),
+			draft.courseContent().methods(),
+			draft.courseContent().commonErrors(),
+			draft.courseContent().examples());
+		fixMathChatClientResponse(new MathSheetDraft(
+			draft.theme(), content, draft.generalKnowledge(), draft.limitations()));
+
+		assertThrows(IllegalStateException.class,
+			() -> sheetGenerationService.generate("Fonctions linéaires", Subject.MATHEMATICS, "MATH"));
+		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
+	}
+
+	@Test
+	void refusesMathGeneralKnowledgeFormulaWithoutVerificationWarning() {
+		MathSheetDraft draft = validMathDraft();
+		fixMathChatClientResponse(new MathSheetDraft(
+			draft.theme(),
+			draft.courseContent(),
+			List.of(new SheetGeneralKnowledgeDraft("Une autre formule : $y=mx+b$.", List.of())),
+			draft.limitations()));
+
+		IllegalStateException exception = assertThrows(IllegalStateException.class,
+			() -> sheetGenerationService.generate("Fonctions linéaires", Subject.MATHEMATICS, "MATH"));
+
+		assertTrue(exception.getMessage().contains("toute formule du complément"));
+		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
+	}
+
+	@Test
+	void refusesMathExampleNotCopiedFromCourse() {
+		MathSheetDraft draft = validMathDraft();
+		MathCourseContent content = new MathCourseContent(
+			draft.courseContent().keyConcepts(),
+			draft.courseContent().definitions(),
+			draft.courseContent().properties(),
+			draft.courseContent().theorems(),
+			draft.courseContent().formulas(),
+			draft.courseContent().methods(),
+			draft.courseContent().commonErrors(),
+			List.of(new MathExample("Exemple inventé : pour x=8, y=16.", List.of("C1"))));
+		fixMathChatClientResponse(new MathSheetDraft(
+			draft.theme(), content, draft.generalKnowledge(), draft.limitations()));
+
+		IllegalStateException exception = assertThrows(IllegalStateException.class,
+			() -> sheetGenerationService.generate("Fonctions linéaires", Subject.MATHEMATICS, "MATH"));
+
+		assertTrue(exception.getMessage().contains("l'exemple doit être recopié exactement"));
+		assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM sheet", Integer.class));
 	}
 
 	@Test
@@ -492,6 +613,28 @@ class SheetGenerationIntegrationTests {
 			List.of());
 	}
 
+	private static MathSheetDraft validMathDraft() {
+		return new MathSheetDraft(
+			"Fonctions linéaires",
+			new MathCourseContent(
+				List.of(new SheetStatement("Une fonction linéaire est de la forme y=ax.", List.of("C1"))),
+				List.of(new SheetDefinition("Fonction linéaire", "Fonction de la forme y=ax.", List.of("C1"))),
+				List.of(new MathProperty("Image de 3", "L'image de 3 est 6.", List.of("C1"))),
+				List.of(new MathTheorem(
+					"Angles alternes-internes",
+					"Si les droites sont parallèles, les angles alternes-internes sont égaux.",
+					List.of("C1"))),
+				List.of(new MathFormulaDraft(
+					"Fonction linéaire", "\\(y=2x\\)", "Formule donnée par le cours.", List.of("C1"))),
+				List.of(new MathMethod(
+					"Calculer une image", List.of("Remplacer x par la valeur.", "Effectuer le calcul."), List.of("C1"))),
+				List.of(new MathCommonError(
+					"Oublier les parenthèses.", "Écrire les parenthèses avant le calcul.", List.of("C1"))),
+				List.of(new MathExample("Exemple du cours : pour x=3, y=6.", List.of("C1")))),
+			List.of(new SheetGeneralKnowledgeDraft("Une autre formule : $y=mx+b$ — à vérifier.", List.of())),
+			List.of());
+	}
+
 	private void fixChatClientResponse(SheetDraft response) {
 		ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
 		ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
@@ -530,6 +673,26 @@ class SheetGenerationIntegrationTests {
 			org.mockito.ArgumentMatchers.<Consumer<PromptSystemSpec>>any());
 		when(request.call()).thenReturn(call);
 		when(call.entity(HistoryGeographySheetDraft.class)).thenReturn(response);
+	}
+
+	private void fixMathChatClientResponse(MathSheetDraft response) {
+		ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+		ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
+		PromptSystemSpec systemSpec = mock(PromptSystemSpec.class);
+		doAnswer(invocation -> {
+			suppliedPrompts.add(invocation.getArgument(0, String.class));
+			return systemSpec;
+		}).when(systemSpec).text(anyString());
+		when(systemSpec.param(anyString(), any())).thenReturn(systemSpec);
+		when(chatClient.prompt()).thenReturn(request);
+		doAnswer(invocation -> {
+			Consumer<PromptSystemSpec> system = invocation.getArgument(0);
+			system.accept(systemSpec);
+			return request;
+		}).when(request).system(
+			org.mockito.ArgumentMatchers.<Consumer<PromptSystemSpec>>any());
+		when(request.call()).thenReturn(call);
+		when(call.entity(MathSheetDraft.class)).thenReturn(response);
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)
