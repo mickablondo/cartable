@@ -9,7 +9,7 @@ import dev.mickablondo.cartable.course.Subject;
 /**
  * Partie commune aux fiches, indépendamment du contenu propre à leur variante.
  */
-public sealed interface Sheet permits GenericSheet, HistoryGeographySheet, UnavailableSheet {
+public sealed interface Sheet permits GenericSheet, HistoryGeographySheet, MathSheet, UnavailableSheet {
 
 	UUID id();
 

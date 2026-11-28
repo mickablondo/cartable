@@ -11,6 +11,7 @@ import java.util.UUID;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.GenericSheet;
 import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
+import dev.mickablondo.cartable.sheet.MathSheet;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetGeneralKnowledge;
 import dev.mickablondo.cartable.sheet.SheetQueryService;
@@ -20,6 +21,7 @@ import dev.mickablondo.cartable.sheet.SheetStatus;
 import dev.mickablondo.cartable.sheet.UnavailableSheet;
 import dev.mickablondo.cartable.sheet.internal.model.GenericSheetContent;
 import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographySheetContent;
+import dev.mickablondo.cartable.sheet.internal.model.MathSheetContent;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
@@ -42,10 +44,14 @@ class SheetQueryServiceImpl implements SheetQueryService {
 	private static final Set<String> GENERIC_FIELDS = Set.of("definitions", "landmarks");
 	private static final Set<String> HISTORY_GEOGRAPHY_FIELDS =
 		Set.of("chronology", "characters", "definitions", "spatialLandmarks");
+	private static final Set<String> MATH_FIELDS =
+		Set.of("definitions", "properties", "theorems", "formulas", "methods", "commonErrors", "examples");
 	private static final String GENERIC_TYPE = "GENERIC";
 	private static final String HISTORY_GEOGRAPHY_TYPE = "HISTORY_GEOGRAPHY";
+	private static final String MATH_TYPE = "MATH";
 	private static final int GENERIC_SCHEMA_VERSION = 1;
 	private static final int HISTORY_GEOGRAPHY_SCHEMA_VERSION = 1;
+	private static final int MATH_SCHEMA_VERSION = 1;
 
 	private final JdbcTemplate jdbcTemplate;
 	private final JsonMapper jsonMapper;
@@ -95,6 +101,16 @@ class SheetQueryServiceImpl implements SheetQueryService {
 							+ "(version " + schemaVersion + ").");
 				}
 				return historyGeographySheet(
+					resultSet.getString("variant_data"), id, subject, theme, sheetType, schemaVersion,
+					keyConcepts, generalKnowledge, limitations, sources, status, generatedAt);
+			}
+			if (MATH_TYPE.equals(sheetType)) {
+				if (schemaVersion != MATH_SCHEMA_VERSION) {
+					return unavailable(id, subject, theme, sheetType, schemaVersion, keyConcepts, generalKnowledge,
+						limitations, sources, status, generatedAt, "La structure de cette fiche n'est pas prise en charge "
+							+ "(version " + schemaVersion + ").");
+				}
+				return mathSheet(
 					resultSet.getString("variant_data"), id, subject, theme, sheetType, schemaVersion,
 					keyConcepts, generalKnowledge, limitations, sources, status, generatedAt);
 			}
@@ -166,6 +182,44 @@ class SheetQueryServiceImpl implements SheetQueryService {
 				id, subject, theme, sheetType, schemaVersion, keyConcepts,
 				content.chronology(), content.characters(), content.definitions(), content.spatialLandmarks(),
 				generalKnowledge, limitations, sources, status, generatedAt);
+		}
+		catch (JacksonException exception) {
+			return unavailable(id, subject, theme, sheetType, schemaVersion, keyConcepts, generalKnowledge,
+				limitations, sources, status, generatedAt, "Le contenu détaillé de cette fiche est illisible.");
+		}
+	}
+
+	private Sheet mathSheet(
+			String variantData,
+			UUID id,
+			Subject subject,
+			String theme,
+			String sheetType,
+			int schemaVersion,
+			List<SheetStatement> keyConcepts,
+			List<SheetGeneralKnowledge> generalKnowledge,
+			List<String> limitations,
+			List<SheetSource> sources,
+			SheetStatus status,
+			java.time.Instant generatedAt) {
+		try {
+			Map<String, Object> variantFields = jsonMapper.readValue(variantData, VARIANT_FIELDS_TYPE);
+			if (variantFields == null || !variantFields.keySet().equals(MATH_FIELDS)) {
+				return unavailable(id, subject, theme, sheetType, schemaVersion, keyConcepts, generalKnowledge,
+					limitations, sources, status, generatedAt, "Le format JSON de cette fiche n'est pas reconnu.");
+			}
+			MathSheetContent content = jsonMapper.readValue(variantData, MathSheetContent.class);
+			if (content == null || content.definitions() == null || content.properties() == null
+					|| content.theorems() == null || content.formulas() == null || content.methods() == null
+					|| content.commonErrors() == null || content.examples() == null) {
+				return unavailable(id, subject, theme, sheetType, schemaVersion, keyConcepts, generalKnowledge,
+					limitations, sources, status, generatedAt, "Le contenu détaillé de cette fiche est incomplet.");
+			}
+			return new MathSheet(
+				id, subject, theme, sheetType, schemaVersion, keyConcepts,
+				content.definitions(), content.properties(), content.theorems(), content.formulas(),
+				content.methods(), content.commonErrors(), content.examples(), generalKnowledge,
+				limitations, sources, status, generatedAt);
 		}
 		catch (JacksonException exception) {
 			return unavailable(id, subject, theme, sheetType, schemaVersion, keyConcepts, generalKnowledge,

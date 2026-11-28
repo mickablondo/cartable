@@ -20,6 +20,8 @@ import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
 import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
 import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
 import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
+import dev.mickablondo.cartable.sheet.MathFormula;
+import dev.mickablondo.cartable.sheet.MathSheet;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
@@ -304,6 +306,39 @@ class CourseAndSheetControllerTests {
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Charles de Gaulle")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Notions à définir")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("Repères spatiaux")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("[C1]")));
+	}
+
+	@Test
+	void displaysMathFormulasAndTheirVerificationWarning() throws Exception {
+		SheetSource source = new SheetSource(
+			"C1", "COURSE", "maths.docx", "Chapitre 2", null, null, null);
+		Sheet sheet = new MathSheet(
+			UUID.randomUUID(),
+			Subject.MATHEMATICS,
+			"Fonctions linéaires",
+			"MATH",
+			1,
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of(new MathFormula("Fonction linéaire", "\\(y=ax\\)", "Formule du cours.", List.of("C1"), true)),
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of(source),
+			SheetStatus.TO_VERIFY,
+			Instant.parse("2026-11-15T10:00:00Z"));
+		when(sheetQueryService.findById(sheet.id())).thenReturn(Optional.of(sheet));
+
+		mockMvc.perform(get("/sheets/{id}", sheet.id()))
+			.andExpect(status().isOk())
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("Fonctions linéaires")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("\\(y=ax\\)")))
+			.andExpect(content().string(org.hamcrest.Matchers.containsString("[formule à vérifier]")))
 			.andExpect(content().string(org.hamcrest.Matchers.containsString("[C1]")));
 	}
 

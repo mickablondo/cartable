@@ -16,7 +16,7 @@
         Cette fiche n’a pas encore été vérifiée. Vérifiez son contenu avant de l’utiliser.
     </p>
 
-    <section th:if="${!#lists.isEmpty(sheet.keyConcepts) or (genericSheet != null and (!#lists.isEmpty(genericSheet.definitions) or !#lists.isEmpty(genericSheet.landmarks))) or (historyGeographySheet != null and (!#lists.isEmpty(historyGeographySheet.chronology) or !#lists.isEmpty(historyGeographySheet.characters) or !#lists.isEmpty(historyGeographySheet.definitions) or !#lists.isEmpty(historyGeographySheet.spatialLandmarks)))}">
+    <section th:if="${hasCourseContent}">
         <h2>Contenu issu du cours et du référentiel — avec sources</h2>
         <div th:if="${!#lists.isEmpty(sheet.keyConcepts)}">
             <h3>Notions clés</h3>
@@ -88,6 +88,84 @@
             <li th:each="landmark : ${historyGeographySheet.spatialLandmarks}">
                 <span th:text="${landmark.place}"></span>
                 <span th:each="sourceId : ${landmark.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${mathSheet != null and !#lists.isEmpty(mathSheet.definitions)}">
+            <h3>Définitions</h3>
+            <ul>
+            <li th:each="definition : ${mathSheet.definitions}">
+                <strong th:text="${definition.term}"></strong> —
+                <span th:text="${definition.definition}"></span>
+                <span th:each="sourceId : ${definition.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${mathSheet != null and !#lists.isEmpty(mathSheet.properties)}">
+            <h3>Propriétés</h3>
+            <ul>
+            <li th:each="property : ${mathSheet.properties}">
+                <strong th:text="${property.name}"></strong> —
+                <span th:text="${property.statement}"></span>
+                <span th:each="sourceId : ${property.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${mathSheet != null and !#lists.isEmpty(mathSheet.theorems)}">
+            <h3>Théorèmes</h3>
+            <ul>
+            <li th:each="theorem : ${mathSheet.theorems}">
+                <strong th:text="${theorem.name}"></strong> —
+                <span th:text="${theorem.statement}"></span>
+                <span th:each="sourceId : ${theorem.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${mathSheet != null and !#lists.isEmpty(mathSheet.formulas)}">
+            <h3>Formules</h3>
+            <ul>
+            <li th:each="formula : ${mathSheet.formulas}">
+                <strong th:text="${formula.name}"></strong> :
+                <code th:text="${formula.latex}"></code>
+                <strong th:if="${formula.requiresVerification}">[formule à vérifier]</strong>
+                <span th:text="${' — ' + formula.explanation}"></span>
+                <span th:each="sourceId : ${formula.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${mathSheet != null and !#lists.isEmpty(mathSheet.methods)}">
+            <h3>Méthodes</h3>
+            <div th:each="method : ${mathSheet.methods}">
+                <h4 th:text="${method.name}"></h4>
+                <span th:each="sourceId : ${method.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+                <ol>
+                    <li th:each="step : ${method.steps}" th:text="${step}"></li>
+                </ol>
+            </div>
+        </div>
+
+        <div th:if="${mathSheet != null and !#lists.isEmpty(mathSheet.commonErrors)}">
+            <h3>Erreurs fréquentes</h3>
+            <ul>
+            <li th:each="commonError : ${mathSheet.commonErrors}">
+                <strong>Erreur :</strong> <span th:text="${commonError.error}"></span>
+                <strong>Correction :</strong> <span th:text="${commonError.correction}"></span>
+                <span th:each="sourceId : ${commonError.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
+            </li>
+            </ul>
+        </div>
+
+        <div th:if="${mathSheet != null and !#lists.isEmpty(mathSheet.examples)}">
+            <h3>Exemples du cours</h3>
+            <ul>
+            <li th:each="example : ${mathSheet.examples}">
+                <span th:text="${example.text}"></span>
+                <span th:each="sourceId : ${example.sourceIds}" th:text="${' [' + sourceId + ']'}"></span>
             </li>
             </ul>
         </div>

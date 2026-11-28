@@ -19,6 +19,13 @@ import dev.mickablondo.cartable.sheet.HistoryGeographyCharacter;
 import dev.mickablondo.cartable.sheet.HistoryGeographyEvent;
 import dev.mickablondo.cartable.sheet.HistoryGeographyLandmark;
 import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
+import dev.mickablondo.cartable.sheet.MathCommonError;
+import dev.mickablondo.cartable.sheet.MathExample;
+import dev.mickablondo.cartable.sheet.MathFormula;
+import dev.mickablondo.cartable.sheet.MathMethod;
+import dev.mickablondo.cartable.sheet.MathProperty;
+import dev.mickablondo.cartable.sheet.MathSheet;
+import dev.mickablondo.cartable.sheet.MathTheorem;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetCourseContent;
@@ -36,6 +43,10 @@ import dev.mickablondo.cartable.sheet.internal.model.GenericSheetContent;
 import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographyCourseContent;
 import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographySheetContent;
 import dev.mickablondo.cartable.sheet.internal.model.HistoryGeographySheetDraft;
+import dev.mickablondo.cartable.sheet.internal.model.MathCourseContent;
+import dev.mickablondo.cartable.sheet.internal.model.MathFormulaDraft;
+import dev.mickablondo.cartable.sheet.internal.model.MathSheetContent;
+import dev.mickablondo.cartable.sheet.internal.model.MathSheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetDraft;
 import dev.mickablondo.cartable.sheet.internal.model.SheetGeneralKnowledgeDraft;
 import org.springframework.ai.chat.client.ChatClient;
@@ -119,6 +130,9 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 		if ("HISTORY_GEOGRAPHY".equals(variant.sheetType())) {
 			return generateHistoryGeography(
 				theme, subject, variant, prompt, sourceCatalog, sourcePassages, context);
+		}
+		if ("MATH".equals(variant.sheetType())) {
+			return generateMath(theme, subject, variant, prompt, sourceCatalog, sourcePassages, context);
 		}
 		SheetDraft draft = chatClient.prompt()
 			.system(system -> system.text(prompt)
@@ -312,6 +326,182 @@ class SheetGenerationServiceImpl implements SheetGenerationService {
 			throw new IllegalStateException("La fiche est refusée : elle ne cite aucune source.");
 		}
 		return List.copyOf(citedSources.values());
+	}
+
+	private Sheet generateMath(
+			String theme,
+			Subject subject,
+			SheetVariantDefinition variant,
+			String prompt,
+			Map<String, SheetSource> sourceCatalog,
+			Map<String, String> sourcePassages,
+			List<String> context) {
+		MathSheetDraft draft = chatClient.prompt()
+			.system(system -> system.text(prompt)
+				.param("subject", subjectLabel(subject))
+				.param("theme", theme.strip())
+				.param("passages", String.join("\n\n", context)))
+			.call()
+			.entity(MathSheetDraft.class);
+		if (draft == null) {
+			throw new IllegalStateException("Le modèle n'a retourné aucun contenu structuré pour la fiche.");
+		}
+
+		MathCourseContent courseContent = requiredValue(
+			draft.courseContent(), "Le contenu issu des sources est absent.");
+		MathValidatedContent validated = validateMathCourseContent(courseContent, sourceCatalog, sourcePassages);
+		List<SheetGeneralKnowledge> generalKnowledge = validateMathGeneralKnowledge(draft.generalKnowledge());
+		List<String> limitations = new ArrayList<>(
+			requiredList(draft.limitations(), "Les limites sont absentes."));
+		if (sourcePassages.entrySet().stream()
+				.anyMatch(entry -> isCourseSource(entry.getKey(), sourceCatalog)
+					&& containsFormulaWarning(entry.getValue()))
+				&& limitations.stream().noneMatch(SheetGenerationServiceImpl::containsFormulaWarning)) {
+			limitations.add(
+				"Le cours contient [formule à vérifier] : vérifiez la transcription de la formule avant de l'utiliser.");
+		}
+
+		MathSheet sheet = new MathSheet(
+			UUID.randomUUID(),
+			subject,
+			requiredText(draft.theme(), "Le thème généré est vide."),
+			variant.sheetType(),
+			variant.schemaVersion(),
+			requiredList(courseContent.keyConcepts(), "Les notions clés sont absentes."),
+			requiredList(courseContent.definitions(), "Les définitions sont absentes."),
+			requiredList(courseContent.properties(), "Les propriétés sont absentes."),
+			requiredList(courseContent.theorems(), "Les théorèmes sont absents."),
+			validated.formulas(),
+			requiredList(courseContent.methods(), "Les méthodes sont absentes."),
+			requiredList(courseContent.commonErrors(), "Les erreurs fréquentes sont absentes."),
+			validated.examples(),
+			generalKnowledge,
+			limitations,
+			validated.sources(),
+			dev.mickablondo.cartable.sheet.SheetStatus.TO_VERIFY,
+			Instant.now());
+		MathSheetContent variantContent = new MathSheetContent(
+			sheet.definitions(),
+			sheet.properties(),
+			sheet.theorems(),
+			sheet.formulas(),
+			sheet.methods(),
+			sheet.commonErrors(),
+			sheet.examples());
+		save(sheet, variantContent);
+		events.publishEvent(new SheetGenerated(sheet.id(), sheet.subject(), sheet.theme(), sheet.generatedAt()));
+		return sheet;
+	}
+
+	private static MathValidatedContent validateMathCourseContent(
+			MathCourseContent content,
+			Map<String, SheetSource> sourceCatalog,
+			Map<String, String> sourcePassages) {
+		Map<String, SheetSource> citedSources = new LinkedHashMap<>();
+		addCitations(content.keyConcepts(), sourceCatalog, citedSources);
+		addDefinitionCitations(content.definitions(), sourceCatalog, citedSources);
+		for (MathProperty property : requiredList(content.properties(), "Les propriétés sont absentes.")) {
+			requiredText(property.name(), "Le nom d'une propriété est vide.");
+			requiredText(property.statement(), "L'énoncé d'une propriété est vide.");
+			addCitationIds(property.sourceIds(), sourceCatalog, citedSources);
+		}
+		for (MathTheorem theorem : requiredList(content.theorems(), "Les théorèmes sont absents.")) {
+			requiredText(theorem.name(), "Le nom d'un théorème est vide.");
+			requiredText(theorem.statement(), "L'énoncé d'un théorème est vide.");
+			addCitationIds(theorem.sourceIds(), sourceCatalog, citedSources);
+		}
+
+		List<MathFormula> formulas = new ArrayList<>();
+		for (MathFormulaDraft formula : requiredList(content.formulas(), "Les formules sont absentes.")) {
+			requiredText(formula.name(), "Le nom d'une formule est vide.");
+			requiredText(formula.latex(), "Une formule est vide.");
+			requiredText(formula.explanation(), "L'explication d'une formule est vide.");
+			addCitationIds(formula.sourceIds(), sourceCatalog, citedSources);
+			boolean requiresVerification = formula.sourceIds().stream()
+				.filter(sourceId -> isCourseSource(sourceId, sourceCatalog))
+				.map(sourcePassages::get)
+				.filter(java.util.Objects::nonNull)
+				.anyMatch(SheetGenerationServiceImpl::containsFormulaWarning);
+			formulas.add(new MathFormula(
+				formula.name().strip(),
+				formula.latex(),
+				formula.explanation().strip(),
+				formula.sourceIds(),
+				requiresVerification));
+		}
+		for (MathMethod method : requiredList(content.methods(), "Les méthodes sont absentes.")) {
+			requiredText(method.name(), "Le nom d'une méthode est vide.");
+			List<String> steps = requiredList(method.steps(), "Les étapes d'une méthode sont absentes.");
+			if (steps.isEmpty()) {
+				throw new IllegalStateException("Une méthode doit contenir au moins une étape.");
+			}
+			steps.forEach(step -> requiredText(step, "Une étape de méthode est vide."));
+			addCitationIds(method.sourceIds(), sourceCatalog, citedSources);
+		}
+		for (MathCommonError error : requiredList(content.commonErrors(), "Les erreurs fréquentes sont absentes.")) {
+			requiredText(error.error(), "Une erreur fréquente est vide.");
+			requiredText(error.correction(), "La correction d'une erreur fréquente est vide.");
+			addCitationIds(error.sourceIds(), sourceCatalog, citedSources);
+		}
+		List<MathExample> examples = new ArrayList<>();
+		for (MathExample example : requiredList(content.examples(), "Les exemples sont absents.")) {
+			String text = requiredText(example.text(), "Un exemple est vide.");
+			addCitationIds(example.sourceIds(), sourceCatalog, citedSources);
+			boolean copiedFromCourse = example.sourceIds().stream()
+				.filter(sourceId -> isCourseSource(sourceId, sourceCatalog))
+				.map(sourcePassages::get)
+				.filter(java.util.Objects::nonNull)
+				.anyMatch(passage -> passage.contains(text));
+			if (!copiedFromCourse) {
+				throw new IllegalStateException(
+					"La fiche est refusée : l'exemple doit être recopié exactement depuis un passage de cours cité.");
+			}
+			examples.add(example);
+		}
+		if (citedSources.isEmpty()) {
+			throw new IllegalStateException("La fiche est refusée : elle ne cite aucune source.");
+		}
+		return new MathValidatedContent(
+			List.copyOf(formulas), List.copyOf(examples), List.copyOf(citedSources.values()));
+	}
+
+	private static List<SheetGeneralKnowledge> validateMathGeneralKnowledge(
+			List<SheetGeneralKnowledgeDraft> generalKnowledge) {
+		List<SheetGeneralKnowledge> validated = new ArrayList<>();
+		for (SheetGeneralKnowledgeDraft item : requiredList(
+				generalKnowledge, "Le complément de connaissances générales est absent.")) {
+			String text = requiredText(item.text(), "Un élément du complément de connaissances générales est vide.");
+			if (item.sourceIds() != null && !item.sourceIds().isEmpty()) {
+				throw new IllegalStateException(
+					"Le complément de connaissances générales ne peut pas citer de source.");
+			}
+			if (containsFormula(text) && !text.toLowerCase(java.util.Locale.FRENCH).contains("à vérifier")) {
+				throw new IllegalStateException(
+					"La fiche est refusée : toute formule du complément doit porter la mention « à vérifier ».");
+			}
+			validated.add(new SheetGeneralKnowledge(text, SheetKnowledgeOrigin.GENERAL_KNOWLEDGE));
+		}
+		return List.copyOf(validated);
+	}
+
+	private static boolean containsFormula(String text) {
+		return text.contains("$")
+			|| text.contains("\\(")
+			|| text.contains("\\[")
+			|| text.matches("(?s).*\\b[A-Za-z][A-Za-z0-9]*\\s*[=<>≤≥]\\s*[-+]?\\w.*");
+	}
+
+	private static boolean isCourseSource(String sourceId, Map<String, SheetSource> sourceCatalog) {
+		SheetSource source = sourceCatalog.get(sourceId);
+		return source != null && "COURSE".equals(source.origin());
+	}
+
+	private static boolean containsFormulaWarning(String passage) {
+		return passage.contains("[formule à vérifier]");
+	}
+
+	private record MathValidatedContent(
+			List<MathFormula> formulas, List<MathExample> examples, List<SheetSource> sources) {
 	}
 
 	private static List<SheetGeneralKnowledge> validateGeneralKnowledge(

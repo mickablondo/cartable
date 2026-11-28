@@ -6,6 +6,7 @@ import java.util.UUID;
 import dev.mickablondo.cartable.course.Subject;
 import dev.mickablondo.cartable.sheet.GenericSheet;
 import dev.mickablondo.cartable.sheet.HistoryGeographySheet;
+import dev.mickablondo.cartable.sheet.MathSheet;
 import dev.mickablondo.cartable.sheet.NoCoursePassagesFoundException;
 import dev.mickablondo.cartable.sheet.Sheet;
 import dev.mickablondo.cartable.sheet.SheetGenerationService;
@@ -89,10 +90,25 @@ class SheetController {
 	@GetMapping("/sheets/{sheetId}")
 	String show(@PathVariable UUID sheetId, Model model) {
 		Sheet sheet = findSheet(sheetId);
+		GenericSheet genericSheet = sheet instanceof GenericSheet value ? value : null;
+		HistoryGeographySheet historyGeographySheet =
+			sheet instanceof HistoryGeographySheet value ? value : null;
+		MathSheet mathSheet = sheet instanceof MathSheet value ? value : null;
 		model.addAttribute("sheet", sheet);
-		model.addAttribute("genericSheet", sheet instanceof GenericSheet genericSheet ? genericSheet : null);
-		model.addAttribute("historyGeographySheet",
-			sheet instanceof HistoryGeographySheet historyGeographySheet ? historyGeographySheet : null);
+		model.addAttribute("genericSheet", genericSheet);
+		model.addAttribute("historyGeographySheet", historyGeographySheet);
+		model.addAttribute("mathSheet", mathSheet);
+		model.addAttribute("hasCourseContent", !sheet.keyConcepts().isEmpty()
+			|| (genericSheet != null && (!genericSheet.definitions().isEmpty() || !genericSheet.landmarks().isEmpty()))
+			|| (historyGeographySheet != null
+				&& (!historyGeographySheet.chronology().isEmpty() || !historyGeographySheet.characters().isEmpty()
+					|| !historyGeographySheet.definitions().isEmpty()
+					|| !historyGeographySheet.spatialLandmarks().isEmpty()))
+			|| (mathSheet != null
+				&& (!mathSheet.definitions().isEmpty() || !mathSheet.properties().isEmpty()
+					|| !mathSheet.theorems().isEmpty() || !mathSheet.formulas().isEmpty()
+					|| !mathSheet.methods().isEmpty() || !mathSheet.commonErrors().isEmpty()
+					|| !mathSheet.examples().isEmpty())));
 		model.addAttribute("subjectLabel", SubjectOptions.label(sheet.subject()));
 		model.addAttribute("needsVerification", sheet.status() == SheetStatus.TO_VERIFY);
 		return "sheet-detail";
